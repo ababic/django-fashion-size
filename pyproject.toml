@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "django-fashion-size"
 version = "0.1.0"
-description = "Django fields for fashion-size measurements and stored measurement values."
+description = "Django fields for fashion-size size units and stored sizes."
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [{ name = "Andy Babic" }]

@@ -1,16 +1,16 @@
-"""Django fields for fashion measurements.
+"""Django fields for fashion sizes.
 
-``MeasurementField`` stores a measurement slug and returns a ``Measurement``.
-``MeasurementValueField`` stores a size token and returns a ``MeasurementValue``.
-The measurements themselves live in ``fashion-size``.
+``SizeUnitField`` stores a size-unit slug and returns a ``SizeUnit``.
+``SizeField`` stores a size token and returns a ``Size``.
+The size types and charts live in ``fashion-size``.
 """
 
-from django_fashion_size.kinds import MeasurementKindSlug
-from django_fashion_size.model_fields import MeasurementField, MeasurementFormField, MeasurementValueField
+from django_fashion_size.kinds import SizeTypeSlug
+from django_fashion_size.model_fields import SizeField, SizeUnitField, SizeUnitFormField
 
 __all__ = [
-    "MeasurementField",
-    "MeasurementFormField",
-    "MeasurementKindSlug",
-    "MeasurementValueField",
+    "SizeField",
+    "SizeTypeSlug",
+    "SizeUnitField",
+    "SizeUnitFormField",
 ]

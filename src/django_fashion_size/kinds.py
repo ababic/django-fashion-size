@@ -1,13 +1,13 @@
-"""Django choice field for measurement kinds.
+"""Django choices for size types.
 
-Values match ``fashion_size.kinds.KindSlug``.
+Values match ``fashion_size.size_types.SizeTypeSlug``.
 """
 
 from django.db import models
 
 
-class MeasurementKindSlug(models.TextChoices):
-    """Fine-grained measurement kinds that can be bound to catalog attributes."""
+class SizeTypeSlug(models.TextChoices):
+    """Fine-grained size types that can be bound to catalog attributes."""
 
     DRESS = "dress", "Dress size"
     ADULT_SHOE = "adult-shoe", "Adult shoe size"

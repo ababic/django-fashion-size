@@ -1,6 +1,6 @@
 """Django choice field for measurement kinds.
 
-Values match ``fashion_size.kinds.KindSlug``.
+Values match ``fashion_size.size_types.SizeTypeSlug``.
 """
 
 from django.db import models

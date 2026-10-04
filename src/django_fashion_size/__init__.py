@@ -1,7 +1,7 @@
 """Django fields for fashion measurements.
 
-``MeasurementField`` stores a measurement slug and returns a ``Measurement``.
-``MeasurementValueField`` stores a size token and returns a ``MeasurementValue``.
+``MeasurementField`` stores a size-unit slug and returns a ``SizeUnit``.
+``MeasurementValueField`` stores a size token and returns a ``Size``.
 The measurements themselves live in ``fashion-size``.
 """
 

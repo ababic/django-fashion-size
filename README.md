@@ -30,4 +30,4 @@ value.convert("eu", age_group="adult", gender="female")
 
 `SizeTypeSlug` is a Django choices enum with the same values as `fashion_size.size_types.SizeTypeSlug`.
 
-Brand-specific conversion and display language are registered on `fashion-size` (`register_brand_converter`, `register_display_language`). This package does not need to be in `INSTALLED_APPS` when the host app registers those hooks.
+Importing this package registers Django's `get_language` as the `fashion-size` display language and makes `Size.display()` use it. English lengths render as `32"` and `81cm`; other languages render as `32 in` and `81 cm`. `UK 10` and `DD` stay the same in every language. Brand-specific conversion is still registered on `fashion-size` (`register_brand_converter`). This package does not need to be in `INSTALLED_APPS`.

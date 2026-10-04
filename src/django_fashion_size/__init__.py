@@ -16,6 +16,7 @@ from fashion_size.types import Size
 
 from django_fashion_size.kinds import SizeTypeSlug
 from django_fashion_size.model_fields import SizeField, SizeUnitField, SizeUnitFormField
+from django_fashion_size.widgets import SizeFormField, SizeValueWidget
 
 
 def _display_for_active_language(size: Size) -> str:
@@ -28,7 +29,9 @@ register_display_language(get_language)
 
 __all__ = [
     "SizeField",
+    "SizeFormField",
     "SizeTypeSlug",
     "SizeUnitField",
     "SizeUnitFormField",
+    "SizeValueWidget",
 ]

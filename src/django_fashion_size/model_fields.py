@@ -141,24 +141,28 @@ class FashionProductTypeFormField(forms.ChoiceField):
         self._choices = self.widget.choices = choices
 
 
+# Longer than any current ``ProductType`` slug (``activewear-bottoms`` is 19).
+# Kept in ``deconstruct`` so the VARCHAR constraint is explicit in migrations.
+PRODUCT_TYPE_MAX_LENGTH = 64
+
+
 class FashionProductTypeField(models.CharField):
     """Product-type slug stored as text.
 
     Reading and writing behave like ``CharField``. Forms use
     ``FashionProductTypeFormField``, whose options always come from
     ``FashionProductType``. Passed ``choices`` are ignored so a stale list
-    cannot replace the current product types.
+    cannot replace the current product types. ``max_length`` defaults to 64
+    and is always deconstructed, because it is a database column constraint.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         kwargs.pop("choices", None)
-        kwargs.setdefault("max_length", 40)
+        kwargs.setdefault("max_length", PRODUCT_TYPE_MAX_LENGTH)
         super().__init__(*args, **kwargs)
 
     def deconstruct(self) -> tuple[str, str, list[Any], dict[str, Any]]:
         name, path, args, kwargs = super().deconstruct()
-        if kwargs.get("max_length") == 40:
-            del kwargs["max_length"]
         kwargs.pop("choices", None)
         return name, path, args, kwargs
 

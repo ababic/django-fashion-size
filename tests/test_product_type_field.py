@@ -19,7 +19,7 @@ from django.utils.functional import Promise
 from fashion_size.product_types import ProductType
 
 from django_fashion_size import FashionProductType, FashionProductTypeField, FashionProductTypeFormField
-from django_fashion_size.model_fields import product_type_choices
+from django_fashion_size.model_fields import PRODUCT_TYPE_MAX_LENGTH, product_type_choices
 
 
 class CatalogItem(models.Model):
@@ -96,12 +96,13 @@ def test_model_field_ignores_constructor_choices() -> None:
     assert "jeans" in _choice_values(form_field)
 
 
-def test_deconstruct_omits_default_max_length_and_choices() -> None:
+def test_deconstruct_keeps_max_length_and_omits_choices() -> None:
     field = FashionProductTypeField()
     _name, path, _args, kwargs = field.deconstruct()
     assert path.endswith("FashionProductTypeField")
-    assert "max_length" not in kwargs
+    assert kwargs["max_length"] == PRODUCT_TYPE_MAX_LENGTH
     assert "choices" not in kwargs
+    assert max(len(member.value) for member in FashionProductType) < PRODUCT_TYPE_MAX_LENGTH
 
 
 def test_model_form_validates_posted_slug() -> None:
@@ -121,6 +122,6 @@ if __name__ == "__main__":
     test_optional_form_field_includes_a_blank_option()
     test_model_formfield_uses_the_product_type_form_field()
     test_model_field_ignores_constructor_choices()
-    test_deconstruct_omits_default_max_length_and_choices()
+    test_deconstruct_keeps_max_length_and_omits_choices()
     test_model_form_validates_posted_slug()
     print("ok")

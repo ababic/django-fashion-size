@@ -47,13 +47,30 @@ def test_fashion_product_type_mirrors_product_type_with_translatable_labels() ->
     assert str(FashionProductType.SHOES.label) == "Shoes"
 
 
-def test_model_field_is_a_charfield_and_stores_the_slug() -> None:
+def test_model_field_returns_product_type_or_none() -> None:
     field = CatalogItem._meta.get_field("product_type")
     assert isinstance(field, FashionProductTypeField)
     assert field.choices is None
-    assert field.to_python("shoes") == "shoes"
-    assert field.to_python(ProductType.SHOES) == ProductType.SHOES
+    assert field.to_python("shoes") is ProductType.SHOES
+    assert field.to_python(ProductType.SHOES) is ProductType.SHOES
+    assert field.to_python(FashionProductType.SHOES) is ProductType.SHOES
+    assert field.to_python("") is None
+    assert field.to_python(None) is None
+    assert field.to_python("not-a-product") is None
+    assert field.from_db_value("shoes", None, None) is ProductType.SHOES
+    assert field.from_db_value("", None, None) is None
+    assert field.from_db_value("not-a-product", None, None) is None
     assert field.get_prep_value("shoes") == "shoes"
+    assert field.get_prep_value(ProductType.SHOES) == "shoes"
+    assert field.get_prep_value("") == ""
+    assert field.get_prep_value("not-a-product") == ""
+
+
+def test_form_field_prepares_a_product_type_as_its_slug() -> None:
+    field = FashionProductTypeFormField()
+    assert field.prepare_value(ProductType.SHOES) == "shoes"
+    assert field.prepare_value("shoes") == "shoes"
+    assert field.prepare_value("") == ""
 
 
 def test_form_field_options_match_product_type() -> None:
@@ -116,7 +133,8 @@ def test_model_form_validates_posted_slug() -> None:
 
 if __name__ == "__main__":
     test_fashion_product_type_mirrors_product_type_with_translatable_labels()
-    test_model_field_is_a_charfield_and_stores_the_slug()
+    test_model_field_returns_product_type_or_none()
+    test_form_field_prepares_a_product_type_as_its_slug()
     test_form_field_options_match_product_type()
     test_form_field_ignores_supplied_and_assigned_choices()
     test_optional_form_field_includes_a_blank_option()

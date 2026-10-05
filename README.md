@@ -21,6 +21,8 @@ tox
 
 To run a single environment, for example Django 6.0: `tox -e py312-django60`.
 
+Frontend sources live under `frontend/`. Lint them with `cd frontend && npm ci && npm run lint` (ESLint for the React widget, Stylelint for its CSS). CI runs Ruff in `lint.yml` and the frontend checks in `frontend-lint.yml`.
+
 A release is a `vX.Y.Z` tag matching the version in `pyproject.toml`. Building the package compiles the size field's CSS and JavaScript from `frontend/` into the static files the widget serves. That compile step runs in the release workflow, and it needs Node.js when you build from this repository. An install from PyPI uses the compiled files and does not need Node.
 
 ```python

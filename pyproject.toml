@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
@@ -20,5 +20,16 @@ Repository = "https://github.com/ababic/django-fashion-size"
 [tool.uv.sources]
 fashion-size = { path = "../fashion-size", editable = true }
 
+[tool.hatch.build.hooks.custom]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/django_fashion_size"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["/frontend"]
+
+[tool.hatch.build]
+artifacts = [
+    "src/django_fashion_size/static/django_fashion_size/size_value_field.css",
+    "src/django_fashion_size/static/django_fashion_size/size_value_field.js",
+]

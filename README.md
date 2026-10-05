@@ -6,7 +6,13 @@ Django fields for [`fashion-size`](https://github.com/ababic/fashion-size).
 
 `SizeField` stores the size token (`10`, `7.5`, `DD`). Pass `size_unit_field` pointing at a `SizeUnitField` on this model or a related one (`"size_unit"`, `"attribute.size_unit"`). Reading it returns a `Size`; call `.convert()` on that value.
 
-The source repository is [github.com/ababic/django-fashion-size](https://github.com/ababic/django-fashion-size). It depends on [`fashion-size`](https://github.com/ababic/fashion-size). PyPI packaging comes later.
+The source repository is [github.com/ababic/django-fashion-size](https://github.com/ababic/django-fashion-size). It depends on [`fashion-size`](https://github.com/ababic/fashion-size).
+
+```bash
+pip install django-fashion-size
+```
+
+A release is a `vX.Y.Z` tag matching the version in `pyproject.toml`. Building the package compiles the size field's CSS and JavaScript from `frontend/` into the static files the widget serves. That compile step runs in the release workflow, and it needs Node.js when you build from this repository. An install from PyPI uses the compiled files and does not need Node.
 
 ```python
 from django.db import models

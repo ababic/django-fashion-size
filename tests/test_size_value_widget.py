@@ -19,7 +19,7 @@ if not settings.configured:
 
 from django.db import models  # noqa: E402
 
-from fashion_size.types import CM_CHEST_SIZE, Size  # noqa: E402
+from fashion_size.types import CM_CHEST_SIZE, Size, UK_ADULT_SHOE_SIZE  # noqa: E402
 
 from django_fashion_size import SizeField, SizeFormField, SizeValueWidget  # noqa: E402
 from django_fashion_size.model_fields import stored_size_token  # noqa: E402
@@ -43,11 +43,41 @@ class ItemForm(forms.ModelForm):
         fields = ["size_unit", "age_group", "gender", "brand", "product_type", "size"]
 
 
-def _config(form: forms.Form) -> dict:
-    html = str(form["size"])
-    match = re.search(r'<script id="id_size-config" type="application/json">(.*?)</script>', html)
+def _config(form: forms.Form, name: str = "size") -> dict:
+    html = str(form[name])
+    match = re.search(
+        rf'<script id="id_{name}-config" type="application/json">(.*?)</script>',
+        html,
+    )
     assert match, html
     return json.loads(match.group(1))
+
+
+class StoredValueForm(forms.Form):
+    """A char column, with the size unit and names supplied to the field."""
+
+    value = SizeFormField(
+        size_unit=UK_ADULT_SHOE_SIZE,
+        brand_name="Dune London",
+        product_type_name="Shoes",
+        age_group="adult",
+        gender="female",
+    )
+
+
+class LinkedNameForm(forms.Form):
+    """The same char column, reading the unit and names from sibling fields."""
+
+    value = SizeFormField(
+        size_unit_field="size_unit",
+        brand_name_field="brand_name",
+        product_type_name_field="product_type_name",
+    )
+    size_unit = forms.CharField(required=False)
+    brand_name = forms.CharField(required=False)
+    product_type_name = forms.CharField(required=False)
+    age_group = forms.CharField(required=False)
+    gender = forms.CharField(required=False)
 
 
 def test_widget_is_an_autocomplete_not_a_size_select() -> None:
@@ -137,6 +167,57 @@ def test_brand_chart_is_embedded() -> None:
     chart = config["charts"]["adult-shoe"]
     assert "dunelondon.com" in chart["source"]
     assert chart["origin"] == "brand"
+    assert config["brandField"] == "brand"
+    assert config["productTypeField"] == "product_type"
+
+
+def test_charfield_accepts_a_size_unit_brand_name_and_product_type_name() -> None:
+    form = StoredValueForm(initial={"value": "5"})
+    config = _config(form, "value")
+    assert config["initialUnit"] == "uk-adult-shoe-size"
+    assert config["brand"] == "Dune London"
+    assert config["productType"] == "shoes"
+    assert config["sizeUnitField"] == ""
+    assert config["brandField"] == ""
+    assert config["productTypeField"] == ""
+    chart = config["charts"]["adult-shoe"]
+    assert chart["origin"] == "brand"
+    assert "dunelondon.com" in chart["source"]
+    assert config["units"]["uk-adult-shoe-size"]["context"]["product_type_name"] == "Shoes"
+    posted = StoredValueForm(
+        data={
+            "value__active": "1",
+            "value__entry": "38",
+            "value__format": "eu",
+            "value__unit": "uk-adult-shoe-size",
+            "value__age_group": "adult",
+            "value__gender": "female",
+            "value__brand": "Dune London",
+            "value__product_type": "Shoes",
+        }
+    )
+    assert posted.is_valid(), posted.errors
+    assert posted.cleaned_data["value"] == "5"
+
+
+def test_charfield_reads_brand_and_product_type_from_linked_fields() -> None:
+    form = LinkedNameForm(
+        initial={
+            "size_unit": "uk-adult-shoe-size",
+            "age_group": "adult",
+            "gender": "female",
+            "brand_name": "Dune London",
+            "product_type_name": "Shoes",
+        }
+    )
+    config = _config(form, "value")
+    assert config["initialUnit"] == "uk-adult-shoe-size"
+    assert config["brand"] == "Dune London"
+    assert config["productType"] == "shoes"
+    assert config["sizeUnitField"] == "size_unit"
+    assert config["brandField"] == "brand_name"
+    assert config["productTypeField"] == "product_type_name"
+    assert config["charts"]["adult-shoe"]["origin"] == "brand"
 
 
 def test_model_field_uses_the_autocomplete_widget() -> None:
@@ -151,5 +232,7 @@ if __name__ == "__main__":
     test_off_chart_size_is_rejected()
     test_inches_posted_into_a_centimetre_field()
     test_brand_chart_is_embedded()
+    test_charfield_accepts_a_size_unit_brand_name_and_product_type_name()
+    test_charfield_reads_brand_and_product_type_from_linked_fields()
     test_model_field_uses_the_autocomplete_widget()
     print("ok")

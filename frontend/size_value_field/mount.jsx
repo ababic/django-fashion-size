@@ -128,10 +128,19 @@ function renderMount(mount) {
     unitInput.addEventListener("change", draw);
   }
   const syncDemographics = () => {
-    ["age_group", "gender", "brand", "product_type"].forEach((name) => {
-      const field = form?.elements.namedItem(name);
+    const linked = [
+      ["age-group", "age_group"],
+      ["gender", "gender"],
+      ["brand", "brandField" in config ? config.brandField : "brand"],
+      ["product-type", "productTypeField" in config ? config.productTypeField : "product_type"],
+    ];
+    linked.forEach(([hidden, source]) => {
+      if (!source) {
+        return;
+      }
+      const field = form?.elements.namedItem(source);
       if (field && "value" in field) {
-        writeField(mount, name.replaceAll("_", "-"), field.value);
+        writeField(mount, hidden, field.value);
       }
     });
   };

@@ -19,7 +19,7 @@ from django.utils.safestring import mark_safe
 
 from fashion_size.charts import chart_for
 from fashion_size.demographics import Gender
-from fashion_size.product_types import ProductType
+from fashion_size.product_types import PRODUCT_TYPE_SLUGS, ProductType
 from fashion_size.scales import default_scale
 from fashion_size.types import (
     FRENCH_BAND_OFFSET,
@@ -39,6 +39,7 @@ from fashion_size.types import (
     format_raw,
     normalize_raw,
     size_from_attribute_option,
+    parse_size_unit_slug,
     size_unit_for_length_unit,
     size_unit_for_locale,
 )
@@ -103,14 +104,29 @@ def _brand_name(value: Any) -> str:
 
 
 def _product_type_slug(value: Any) -> str:
+    """Chart slug for a product type name (``Shoes``), slug (``shoes``), or object."""
     if isinstance(value, ProductType):
         return value.value
     if isinstance(value, str):
-        return value.strip().lower()
-    slug = getattr(value, "slug", None) or getattr(value, "value", None)
-    if isinstance(slug, str):
-        return slug.strip().lower()
+        return _slug_from_product_type_text(value)
+    for attr in ("slug", "value", "name"):
+        raw = getattr(value, attr, None)
+        if isinstance(raw, str) and raw.strip():
+            return _slug_from_product_type_text(raw)
     return ""
+
+
+def _slug_from_product_type_text(text: str) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    lowered = cleaned.lower()
+    if lowered in PRODUCT_TYPE_SLUGS:
+        return lowered
+    for product_type in ProductType:
+        if product_type.label.casefold() == cleaned.casefold():
+            return product_type.value
+    return lowered
 
 
 def _demographic_label(age_group: str, gender: str) -> str:
@@ -307,6 +323,8 @@ def _context_objects(form: forms.BaseForm, size_unit_field: str) -> list[Any]:
 def _first(widget: SizeValueWidget, form: forms.BaseForm, objects: list[Any], name: str, explicit: Any) -> Any:
     if explicit not in (None, ""):
         return explicit
+    if not name:
+        return None
     posted = _form_value(form, name)
     if posted not in (None, ""):
         return posted
@@ -317,7 +335,9 @@ def _first(widget: SizeValueWidget, form: forms.BaseForm, objects: list[Any], na
     return None
 
 
-def _current_unit_slug(form: forms.BaseForm, size_unit_field: str) -> str:
+def _current_unit_slug(form: forms.BaseForm, size_unit_field: str, explicit: SizeUnit | None) -> str:
+    if explicit is not None:
+        return explicit.slug
     if "." not in size_unit_field:
         posted = _form_value(form, size_unit_field)
         if isinstance(posted, SizeUnit):
@@ -403,17 +423,26 @@ def posted_size_token(data: Any, name: str) -> str | _InvalidEntry:
             age_group=str(data.get(f"{name}__age_group") or "").strip().lower(),
             gender=str(data.get(f"{name}__gender") or "").strip().lower(),
             brand_name=str(data.get(f"{name}__brand") or "").strip(),
-            product_type=str(data.get(f"{name}__product_type") or "").strip().lower(),
+            product_type=_product_type_slug(data.get(f"{name}__product_type")),
         )
     except ValidationError as exc:
         message = exc.messages[0] if exc.messages else _NOT_ON_CHART
         return _InvalidEntry(message)
 
 
+def _linked_field_name(form: forms.BaseForm, name: str) -> str:
+    """HTML name of a sibling field, or blank when this form does not include it."""
+    if name and "." not in name and name in form.fields:
+        return form.add_prefix(name)
+    return ""
+
+
 def size_value_config(
     form: forms.BaseForm,
     *,
     size_unit_field: str,
+    brand_name_field: str,
+    product_type_name_field: str,
     widget: SizeValueWidget,
     label: str,
 ) -> dict[str, Any]:
@@ -421,10 +450,12 @@ def size_value_config(
     objects = _context_objects(form, size_unit_field)
     age_group = _plain(_first(widget, form, objects, "age_group", widget.age_group))
     gender = _plain(_first(widget, form, objects, "gender", widget.gender))
-    brand = _brand_name(_first(widget, form, objects, "brand", widget.brand_name))
-    product_type = _product_type_slug(_first(widget, form, objects, "product_type", widget.product_type))
-    current = _current_unit_slug(form, size_unit_field)
-    on_form = "." not in size_unit_field and size_unit_field in form.fields
+    brand = _brand_name(_first(widget, form, objects, brand_name_field, widget.brand_name))
+    product_type = _product_type_slug(
+        _first(widget, form, objects, product_type_name_field, widget.product_type_name)
+    )
+    current = _current_unit_slug(form, size_unit_field, widget.size_unit)
+    on_form = widget.size_unit is None and "." not in size_unit_field and size_unit_field in form.fields
     units = [unit for unit in SIZE_UNITS if on_form or unit.slug == current]
     charts: dict[str, Any] = {}
     payload: dict[str, Any] = {}
@@ -479,6 +510,8 @@ def size_value_config(
     return {
         "initialUnit": current,
         "sizeUnitField": form.add_prefix(size_unit_field) if on_form else "",
+        "brandField": _linked_field_name(form, brand_name_field),
+        "productTypeField": _linked_field_name(form, product_type_name_field),
         "ageGroup": age_group,
         "gender": gender,
         "brand": brand,
@@ -498,14 +531,18 @@ class SizeValueWidget(forms.Widget):
         *,
         age_group: str | None = None,
         gender: str | None = None,
+        size_unit: SizeUnit | str | None = None,
         brand_name: str | None = None,
-        product_type: str | None = None,
+        product_type_name: str | None = None,
         choices: list[str] | None = None,
     ) -> None:
         self.age_group = age_group
         self.gender = gender
+        self.size_unit = None if size_unit in (None, "") else (
+            size_unit if isinstance(size_unit, SizeUnit) else parse_size_unit_slug(str(size_unit))
+        )
         self.brand_name = brand_name
-        self.product_type = product_type
+        self.product_type_name = product_type_name
         self.choices = choices
         self.config: dict[str, Any] = {}
         super().__init__(attrs)
@@ -564,9 +601,34 @@ class SizeValueWidget(forms.Widget):
 class SizeFormField(forms.CharField):
     """Char field whose widget is the size autocomplete."""
 
-    def __init__(self, *args: Any, size_unit_field: str = "", **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *args: Any,
+        size_unit_field: str = "",
+        size_unit: SizeUnit | str | None = None,
+        brand_name: str | None = None,
+        product_type_name: str | None = None,
+        brand_name_field: str = "brand",
+        product_type_name_field: str = "product_type",
+        age_group: str | None = None,
+        gender: str | None = None,
+        **kwargs: Any,
+    ) -> None:
         self.size_unit_field = size_unit_field
-        kwargs.setdefault("widget", SizeValueWidget())
+        self.brand_name_field = brand_name_field
+        self.product_type_name_field = product_type_name_field
+        widget = kwargs.setdefault("widget", SizeValueWidget())
+        if isinstance(widget, SizeValueWidget):
+            if size_unit not in (None, ""):
+                widget.size_unit = size_unit if isinstance(size_unit, SizeUnit) else parse_size_unit_slug(str(size_unit))
+            if brand_name is not None:
+                widget.brand_name = brand_name
+            if product_type_name is not None:
+                widget.product_type_name = product_type_name
+            if age_group is not None:
+                widget.age_group = age_group
+            if gender is not None:
+                widget.gender = gender
         super().__init__(*args, **kwargs)
 
     def to_python(self, value: Any) -> str:
@@ -585,6 +647,8 @@ class SizeBoundField(forms.BoundField):
             widget.config = size_value_config(
                 self.form,
                 size_unit_field=self.field.size_unit_field,
+                brand_name_field=self.field.brand_name_field,
+                product_type_name_field=self.field.product_type_name_field,
                 widget=widget,
                 label=self.label,
             )

@@ -574,14 +574,13 @@ export function SizeValueField({
           className="size-value__chart-link"
           aria-expanded={chartOpen}
           aria-haspopup="dialog"
-          aria-label={`Show ${chart.name}`}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => {
             setOpen(false);
             setChartOpen((current) => !current);
           }}
         >
-          Chart
+          View conversion chart
         </button>
       ) : null}
       </div>

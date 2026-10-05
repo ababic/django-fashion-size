@@ -2,8 +2,9 @@
 
 The size is a text field. Suggestions appear as you type and come from the
 fashion-size chart for the field's size unit. A short select chooses the region
-or length unit you are typing. A Chart link to the right of the field opens
-that chart. The posted value is the token stored by ``SizeField``.
+or length unit you are typing. A "View conversion chart" link to the
+right of the field opens that chart. The posted value is the token stored
+by ``SizeField``.
 """
 
 from __future__ import annotations

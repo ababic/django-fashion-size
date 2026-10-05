@@ -27,7 +27,7 @@ wheels = [
 
 [[package]]
 name = "django-fashion-size"
-version = "0.1.2"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "django" },
@@ -37,7 +37,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = ">=4.2" },
-    { name = "fashion-size", specifier = ">=1.0,<2" },
+    { name = "fashion-size" },
 ]
 
 [[package]]

@@ -2,7 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/django-fashion-size?label=PyPI)](https://pypi.org/project/django-fashion-size/)
 [![Python](https://img.shields.io/pypi/pyversions/django-fashion-size?label=Python)](https://pypi.org/project/django-fashion-size/)
-[![Django](https://img.shields.io/badge/Django-4.2%2B-092E20?logo=django&logoColor=white)](https://www.djangoproject.com/)
+[![Django](https://img.shields.io/badge/Django-6.0%20%7C%206.1-092E20?logo=django&logoColor=white)](https://www.djangoproject.com/)
 [![Release](https://github.com/ababic/django-fashion-size/actions/workflows/release.yml/badge.svg)](https://github.com/ababic/django-fashion-size/actions/workflows/release.yml)
 
 Django fields for [`fashion-size`](https://github.com/ababic/fashion-size).

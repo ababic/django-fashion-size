@@ -6,7 +6,7 @@ Django fields for [`fashion-size`](https://github.com/ababic/fashion-size).
 
 `SizeField` stores the size token (`10`, `7.5`, `DD`). Pass `size_unit_field` pointing at a `SizeUnitField` on this model or a related one (`"size_unit"`, `"attribute.size_unit"`). Reading it returns a `Size`; call `.convert()` on that value.
 
-The source repository is [github.com/ababic/django-fashion-size](https://github.com/ababic/django-fashion-size). It depends on [`fashion-size`](https://github.com/ababic/fashion-size) 1.0 or newer.
+The source repository is [github.com/ababic/django-fashion-size](https://github.com/ababic/django-fashion-size). It depends on [`fashion-size`](https://github.com/ababic/fashion-size) (CalVer releases on PyPI).
 
 ```bash
 pip install django-fashion-size

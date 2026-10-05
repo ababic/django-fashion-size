@@ -11,14 +11,11 @@ requires-python = ">=3.12"
 authors = [{ name = "Andy Babic" }]
 dependencies = [
     "django>=4.2",
-    "fashion-size>=0.1",
+    "fashion-size>=1.0,<2",
 ]
 
 [project.urls]
 Repository = "https://github.com/ababic/django-fashion-size"
-
-[tool.uv.sources]
-fashion-size = { path = "../fashion-size", editable = true }
 
 [tool.hatch.build.hooks.custom]
 

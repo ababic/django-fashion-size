@@ -17,9 +17,10 @@ from django.core.exceptions import ValidationError
 from django.utils.html import format_html, json_script
 from django.utils.safestring import mark_safe
 
+from fashion_size.brands import BrandName, resolve_brand_name
 from fashion_size.charts import chart_for
-from fashion_size.demographics import Gender
-from fashion_size.product_types import PRODUCT_TYPE_SLUGS, ProductType
+from fashion_size.demographics import AgeGroup, Demographic, Gender
+from fashion_size.product_types import PRODUCT_TYPE_SLUGS, ProductType, resolve_product_type
 from fashion_size.scales import default_scale
 from fashion_size.types import (
     FRENCH_BAND_OFFSET,
@@ -94,12 +95,24 @@ def _plain(value: Any) -> str:
     return str(value).strip()
 
 
-def _brand_name(value: Any) -> str:
+def _brand_name(value: Any) -> BrandName | str:
+    if isinstance(value, BrandName):
+        return value
     if isinstance(value, str):
-        return value.strip()
+        text = value.strip()
+        if not text:
+            return ""
+        known = resolve_brand_name(text)
+        return known if known is not None else text
     name = getattr(value, "name", None)
+    if isinstance(name, BrandName):
+        return name
     if isinstance(name, str):
-        return name.strip()
+        text = name.strip()
+        if not text:
+            return ""
+        known = resolve_brand_name(text)
+        return known if known is not None else text
     return ""
 
 
@@ -138,11 +151,13 @@ def _demographic_label(age_group: str, gender: str) -> str:
         return " ".join(part for part in (age_group, gender) if part)
 
 
-def _product_label(slug: str) -> str:
+def _product_label(value: ProductType | str) -> str:
+    if isinstance(value, ProductType):
+        return value.label
     try:
-        return ProductType(slug).label
+        return resolve_product_type(value).label
     except ValueError:
-        return slug
+        return str(value)
 
 
 def _scale_from_chart(size_type: SizeType, chart: Any) -> ConversionScale:
@@ -265,7 +280,7 @@ def _chart_payload(
         source = brand_chart.source_url or "Brand chart"
         notes = brand_chart.source_notes
         origin = "brand"
-        groups = [_product_label(slug) for slug in brand_chart.product_types]
+        groups = [_product_label(product_type) for product_type in brand_chart.product_types]
     else:
         name = f"Default {demographic} {size_type.label.lower()} chart"
         source = "Default chart"
@@ -355,6 +370,14 @@ def _current_unit_slug(form: forms.BaseForm, size_unit_field: str, explicit: Siz
     return ""
 
 
+def _conversion_demographic(age_group: str, gender: str, *, length: bool) -> Demographic:
+    age = str(age_group or "").strip().lower()
+    sex = str(gender or "").strip().lower()
+    if length and (not age or not sex):
+        return Demographic(age_group=AgeGroup.ADULT, gender=Gender.UNISEX)
+    return Demographic(age_group=age, gender=sex)
+
+
 def _convert_entry(
     *,
     unit_slug: str,
@@ -362,7 +385,7 @@ def _convert_entry(
     text: str,
     age_group: str,
     gender: str,
-    brand_name: str,
+    brand_name: BrandName | str,
     product_type: str,
 ) -> str:
     try:
@@ -377,34 +400,39 @@ def _convert_entry(
         entered = Size.from_raw(text, _entry_unit(size_type, format_name))
     except (InvalidOperation, ValueError, TypeError) as exc:
         raise ValidationError(_LENGTH_RANGE if size_type.family == SizeFamily.LENGTH else _NOT_ON_CHART) from exc
-    if size_type.family == SizeFamily.LENGTH:
-        try:
-            converted = entered.convert(storage)
-        except (LengthOutOfRangeError, IncompatibleSizeError, ValueError) as exc:
-            raise ValidationError(_LENGTH_RANGE) from exc
-        return stored_size_token(converted)
-    scale, brand_chart = _resolve_scale(
-        size_type,
-        age_group=age_group,
-        gender=gender,
-        brand_name=brand_name,
-        product_type=product_type,
-    )
-    if scale is None:
+    is_length = size_type.family == SizeFamily.LENGTH
+    if not is_length and (not str(age_group or "").strip() or not str(gender or "").strip()):
         if format_name == _storage_format(storage):
             return stored_size_token(entered)
         raise ValidationError(_NOT_ON_CHART)
+    demographic = _conversion_demographic(age_group, gender, length=is_length)
+    resolved_product_type = _product_type_slug(product_type) or None
+    if not is_length:
+        scale, _brand_chart = _resolve_scale(
+            size_type,
+            age_group=age_group,
+            gender=gender,
+            brand_name=brand_name,
+            product_type=product_type,
+        )
+        if scale is None:
+            if format_name == _storage_format(storage):
+                return stored_size_token(entered)
+            raise ValidationError(_NOT_ON_CHART)
+        try:
+            scale.row_for(entered.raw, entered.size_unit)
+        except UnknownSizeError as exc:
+            raise ValidationError(_NOT_ON_CHART) from exc
     try:
-        scale.row_for(entered.raw, entered.size_unit)
         converted = entered.convert(
             storage,
-            age_group=age_group or None,
-            gender=gender or None,
-            brand_scale=scale if brand_chart is not None else None,
+            demographic=demographic,
+            brand_name=brand_name or None,
+            product_type=resolved_product_type,
         )
-    except (UnknownSizeError, MissingScaleError, IncompatibleSizeError, ValueError) as exc:
-        raise ValidationError(_NOT_ON_CHART) from exc
-    return stored_size_token(converted)
+    except (UnknownSizeError, MissingScaleError, IncompatibleSizeError, LengthOutOfRangeError, ValueError) as exc:
+        raise ValidationError(_LENGTH_RANGE if is_length else _NOT_ON_CHART) from exc
+    return stored_size_token(converted.size)
 
 
 def posted_size_token(data: Any, name: str) -> str | _InvalidEntry:

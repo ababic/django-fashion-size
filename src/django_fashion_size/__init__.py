@@ -2,7 +2,8 @@
 
 ``SizeUnitField`` stores a size-unit slug and returns a ``SizeUnit``.
 ``SizeField`` stores a size token and returns a ``Size``.
-``FashionProductTypeField`` stores a product-type slug as text; its form
+``FashionProductTypeField`` stores a product-type slug and returns a
+``ProductType``, or ``None`` when the value is blank or unknown; its form
 control always offers ``FashionProductType`` options.
 The size types and charts live in ``fashion-size``.
 

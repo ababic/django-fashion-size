@@ -10,6 +10,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models.fields import BLANK_CHOICE_DASH
 from django.db.models.query_utils import DeferredAttribute
+from fashion_size.product_types import ProductType, resolve_product_type
 from fashion_size.types import (
     SIZE_UNIT_BY_SLUG,
     Size,
@@ -134,6 +135,14 @@ class FashionProductTypeFormField(forms.ChoiceField):
         kwargs.pop("max_length", None)
         super().__init__(*args, **kwargs)
 
+    def prepare_value(self, value: Any) -> Any:
+        if isinstance(value, ProductType):
+            return value.value
+        prepared = super().prepare_value(value)
+        if isinstance(prepared, ProductType):
+            return prepared.value
+        return prepared
+
     @forms.ChoiceField.choices.setter
     def choices(self, _value: Any) -> None:
         include_blank = not getattr(self, "required", True)
@@ -149,7 +158,9 @@ PRODUCT_TYPE_MAX_LENGTH = 64
 class FashionProductTypeField(models.CharField):
     """Product-type slug stored as text.
 
-    Reading and writing behave like ``CharField``. Forms use
+    The column stores the slug. Reading the field returns a
+    ``fashion_size.product_types.ProductType``, or ``None`` when the value
+    is blank or not a known product type. Forms use
     ``FashionProductTypeFormField``, whose options always come from
     ``FashionProductType``. Passed ``choices`` are ignored so a stale list
     cannot replace the current product types. ``max_length`` defaults to 64
@@ -165,6 +176,26 @@ class FashionProductTypeField(models.CharField):
         name, path, args, kwargs = super().deconstruct()
         kwargs.pop("choices", None)
         return name, path, args, kwargs
+
+    def from_db_value(self, value: str | None, expression: object, connection: object) -> ProductType | None:
+        return self.to_python(value)
+
+    def to_python(self, value: Any) -> ProductType | None:
+        if isinstance(value, ProductType) or value is None or value == "":
+            return value or None
+        try:
+            return resolve_product_type(value)
+        except ValueError:
+            return None
+
+    def get_prep_value(self, value: Any) -> str:
+        product_type = self.to_python(value)
+        return "" if product_type is None else product_type.value
+
+    def pre_save(self, model_instance: models.Model, add: bool) -> str:
+        product_type = self.to_python(getattr(model_instance, self.attname))
+        setattr(model_instance, self.attname, product_type)
+        return "" if product_type is None else product_type.value
 
     def formfield(self, **kwargs: Any) -> forms.Field:
         kwargs.setdefault("form_class", FashionProductTypeFormField)

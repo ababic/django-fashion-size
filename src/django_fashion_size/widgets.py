@@ -16,11 +16,14 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.utils.html import format_html, json_script
 from django.utils.safestring import mark_safe
-
 from fashion_size.brands import BrandName, resolve_brand_name
 from fashion_size.charts import chart_for
 from fashion_size.demographics import AgeGroup, Demographic, Gender
-from fashion_size.product_types import PRODUCT_TYPE_SLUGS, ProductType, resolve_product_type
+from fashion_size.product_types import (
+    PRODUCT_TYPE_SLUGS,
+    ProductType,
+    resolve_product_type,
+)
 from fashion_size.scales import default_scale
 from fashion_size.types import (
     FRENCH_BAND_OFFSET,
@@ -39,8 +42,8 @@ from fashion_size.types import (
     format_age_gender,
     format_raw,
     normalize_raw,
-    size_from_attribute_option,
     parse_size_unit_slug,
+    size_from_attribute_option,
     size_unit_for_length_unit,
     size_unit_for_locale,
 )

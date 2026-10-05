@@ -5,7 +5,6 @@ Values and labels come from ``fashion_size`` so they stay aligned with
 """
 
 from django.db import models
-
 from fashion_size.size_types import SizeTypeSlug as FashionSizeTypeSlug
 from fashion_size.types import SIZE_TYPE_BY_SLUG
 

@@ -17,12 +17,12 @@ if not settings.configured:
     )
     django.setup()
 
-from django.db import models  # noqa: E402
+from django.db import models
 
-from fashion_size.types import CM_CHEST_SIZE, Size, UK_ADULT_SHOE_SIZE  # noqa: E402
+from fashion_size.types import CM_CHEST_SIZE, Size, UK_ADULT_SHOE_SIZE
 
-from django_fashion_size import SizeField, SizeFormField, SizeValueWidget  # noqa: E402
-from django_fashion_size.model_fields import stored_size_token  # noqa: E402
+from django_fashion_size import SizeField, SizeFormField, SizeValueWidget
+from django_fashion_size.model_fields import stored_size_token
 
 
 class Item(models.Model):

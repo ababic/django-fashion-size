@@ -10,8 +10,17 @@ readme = "README.md"
 requires-python = ">=3.12"
 authors = [{ name = "Andy Babic" }]
 dependencies = [
-    "django>=4.2",
+    "django>=6.0,<7",
     "fashion-size",
+]
+
+[project.optional-dependencies]
+testing = [
+    "pytest>=8",
+    "tox>=4",
+]
+development = [
+    "ruff>=0.11,<1",
 ]
 
 [project.urls]
@@ -30,3 +39,17 @@ artifacts = [
     "src/django_fashion_size/static/django_fashion_size/size_value_field.css",
     "src/django_fashion_size/static/django_fashion_size/size_value_field.js",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+ignore = ["RUF012"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["E402", "I001"]

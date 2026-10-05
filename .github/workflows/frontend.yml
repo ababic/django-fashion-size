@@ -1,4 +1,4 @@
-name: Frontend lint
+name: Frontend
 
 on:
   pull_request:
@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
-    name: ESLint and Stylelint
+  frontend:
+    name: Lint and build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -36,3 +36,10 @@ jobs:
 
       - name: Lint JavaScript and CSS
         run: npm run lint
+
+      - name: Build widget assets
+        run: npm run build
+
+      - name: Check committed static files match the build
+        working-directory: ${{ github.workspace }}
+        run: git diff --exit-code -- src/django_fashion_size/static/django_fashion_size/

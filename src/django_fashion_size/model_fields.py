@@ -8,6 +8,7 @@ from typing import Any
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models.fields import BLANK_CHOICE_DASH
 from django.db.models.query_utils import DeferredAttribute
 from fashion_size.types import (
     SIZE_UNIT_BY_SLUG,
@@ -17,6 +18,8 @@ from fashion_size.types import (
     parse_size_unit_slug,
     size_unit_choices,
 )
+
+from django_fashion_size.kinds import FashionProductType
 
 # One list so ``deconstruct`` can drop the default choices by identity.
 SIZE_UNIT_CHOICES = size_unit_choices()
@@ -104,6 +107,67 @@ class SizeUnitField(models.CharField):
         # Choice fields ignore ``form_class`` and fall back to TypedChoiceField
         # unless ``choices_form_class`` is set.
         kwargs["choices_form_class"] = SizeUnitFormField
+        return super().formfield(**kwargs)
+
+
+def product_type_choices(*, include_blank: bool = False) -> list[tuple[str, str]]:
+    """``(slug, label)`` pairs from ``FashionProductType`` — usable as form ``choices``."""
+    choices = list(FashionProductType.choices)
+    if include_blank:
+        return [*BLANK_CHOICE_DASH, *choices]
+    return choices
+
+
+class FashionProductTypeFormField(forms.ChoiceField):
+    """Select whose options always follow ``FashionProductType``.
+
+    Callers cannot replace the option list: ``choices`` is rebuilt from
+    ``FashionProductType`` whenever it is set. Labels are translatable.
+    A blank option is included when the field is not required. The posted
+    value is the product-type slug.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.pop("choices", None)
+        kwargs.pop("coerce", None)
+        kwargs.pop("empty_value", None)
+        kwargs.pop("max_length", None)
+        super().__init__(*args, **kwargs)
+
+    @forms.ChoiceField.choices.setter
+    def choices(self, _value: Any) -> None:
+        include_blank = not getattr(self, "required", True)
+        choices = product_type_choices(include_blank=include_blank)
+        self._choices = self.widget.choices = choices
+
+
+# Longer than any current ``ProductType`` slug (``activewear-bottoms`` is 19).
+# Kept in ``deconstruct`` so the VARCHAR constraint is explicit in migrations.
+PRODUCT_TYPE_MAX_LENGTH = 64
+
+
+class FashionProductTypeField(models.CharField):
+    """Product-type slug stored as text.
+
+    Reading and writing behave like ``CharField``. Forms use
+    ``FashionProductTypeFormField``, whose options always come from
+    ``FashionProductType``. Passed ``choices`` are ignored so a stale list
+    cannot replace the current product types. ``max_length`` defaults to 64
+    and is always deconstructed, because it is a database column constraint.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.pop("choices", None)
+        kwargs.setdefault("max_length", PRODUCT_TYPE_MAX_LENGTH)
+        super().__init__(*args, **kwargs)
+
+    def deconstruct(self) -> tuple[str, str, list[Any], dict[str, Any]]:
+        name, path, args, kwargs = super().deconstruct()
+        kwargs.pop("choices", None)
+        return name, path, args, kwargs
+
+    def formfield(self, **kwargs: Any) -> forms.Field:
+        kwargs.setdefault("form_class", FashionProductTypeFormField)
         return super().formfield(**kwargs)
 
 

@@ -55,6 +55,10 @@ value.convert_to_locale(
 )
 ```
 
+`FashionProductType` is a Django `TextChoices` enum with the same values as `fashion_size.product_types.ProductType`. Its labels are marked for translation (`gettext_lazy`), so `makemessages` can collect them.
+
+`FashionProductTypeField` is a `CharField` for a product-type slug (`shoes`). It does not convert the stored value. Its default form field is `FashionProductTypeFormField`, a select whose options always come from `FashionProductType`. Passed `choices` are ignored so the list cannot go stale against `fashion-size`.
+
 `SizeTypeSlug` is a Django choices enum with the same values as `fashion_size.size_types.SizeTypeSlug`.
 
 Importing this package registers Django's `get_language` as the `fashion-size` display language and makes `Size.display()` use it. English lengths render as `32"` and `81cm`; other languages render as `32 in` and `81 cm`. `UK 10` and `DD` stay the same in every language. Brand charts ship with `fashion-size`; pass `brand_name` and `product_type` on `Size.convert` / `Size.convert_to_locale`. The model fields do not need this package in `INSTALLED_APPS`.

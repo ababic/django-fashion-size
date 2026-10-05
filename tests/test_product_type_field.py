@@ -15,9 +15,10 @@ if not settings.configured:
     django.setup()
 
 from django.db import models
+from django.utils.functional import Promise
 from fashion_size.product_types import ProductType
 
-from django_fashion_size import FashionProductTypeField, FashionProductTypeFormField
+from django_fashion_size import FashionProductType, FashionProductTypeField, FashionProductTypeFormField
 from django_fashion_size.model_fields import product_type_choices
 
 
@@ -38,6 +39,14 @@ def _choice_values(field: forms.ChoiceField) -> list[str]:
     return [value for value, _label in field.choices]
 
 
+def test_fashion_product_type_mirrors_product_type_with_translatable_labels() -> None:
+    assert [member.value for member in FashionProductType] == [member.value for member in ProductType]
+    assert [str(member.label) for member in FashionProductType] == [member.label for member in ProductType]
+    assert all(isinstance(member.label, Promise) for member in FashionProductType)
+    assert FashionProductType.SHOES == "shoes"
+    assert str(FashionProductType.SHOES.label) == "Shoes"
+
+
 def test_model_field_is_a_charfield_and_stores_the_slug() -> None:
     field = CatalogItem._meta.get_field("product_type")
     assert isinstance(field, FashionProductTypeField)
@@ -51,8 +60,8 @@ def test_form_field_options_match_product_type() -> None:
     field = FashionProductTypeFormField()
     expected = product_type_choices()
     assert list(field.choices) == expected
-    assert ("shoes", "Shoes") in field.choices
-    assert len(field.choices) == len(list(ProductType))
+    assert ("shoes", "Shoes") in [(value, str(label)) for value, label in field.choices]
+    assert len(field.choices) == len(FashionProductType)
 
 
 def test_form_field_ignores_supplied_and_assigned_choices() -> None:
@@ -68,7 +77,7 @@ def test_optional_form_field_includes_a_blank_option() -> None:
     field = FashionProductTypeFormField(required=False)
     values = _choice_values(field)
     assert values[0] == ""
-    assert values[1:] == [product_type.value for product_type in ProductType]
+    assert values[1:] == [product_type.value for product_type in FashionProductType]
 
 
 def test_model_formfield_uses_the_product_type_form_field() -> None:
@@ -105,6 +114,7 @@ def test_model_form_validates_posted_slug() -> None:
 
 
 if __name__ == "__main__":
+    test_fashion_product_type_mirrors_product_type_with_translatable_labels()
     test_model_field_is_a_charfield_and_stores_the_slug()
     test_form_field_options_match_product_type()
     test_form_field_ignores_supplied_and_assigned_choices()

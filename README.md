@@ -55,7 +55,9 @@ value.convert_to_locale(
 )
 ```
 
-`FashionProductTypeField` is a `CharField` for a product-type slug (`shoes`). It does not convert the stored value. Its default form field is `FashionProductTypeFormField`, a select whose options always come from `fashion_size.product_types.ProductType` (labels included). Passed `choices` are ignored so the list cannot go stale against `fashion-size`.
+`FashionProductType` is a Django `TextChoices` enum with the same values as `fashion_size.product_types.ProductType`. Its labels are marked for translation (`gettext_lazy`), so `makemessages` can collect them.
+
+`FashionProductTypeField` is a `CharField` for a product-type slug (`shoes`). It does not convert the stored value. Its default form field is `FashionProductTypeFormField`, a select whose options always come from `FashionProductType`. Passed `choices` are ignored so the list cannot go stale against `fashion-size`.
 
 `SizeTypeSlug` is a Django choices enum with the same values as `fashion_size.size_types.SizeTypeSlug`.
 

@@ -10,7 +10,6 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models.fields import BLANK_CHOICE_DASH
 from django.db.models.query_utils import DeferredAttribute
-from fashion_size.product_types import ProductType
 from fashion_size.types import (
     SIZE_UNIT_BY_SLUG,
     Size,
@@ -19,6 +18,8 @@ from fashion_size.types import (
     parse_size_unit_slug,
     size_unit_choices,
 )
+
+from django_fashion_size.kinds import FashionProductType
 
 # One list so ``deconstruct`` can drop the default choices by identity.
 SIZE_UNIT_CHOICES = size_unit_choices()
@@ -110,19 +111,20 @@ class SizeUnitField(models.CharField):
 
 
 def product_type_choices(*, include_blank: bool = False) -> list[tuple[str, str]]:
-    """``(slug, label)`` pairs for every ``ProductType`` — usable as form ``choices``."""
-    choices = [(product_type.value, product_type.label) for product_type in ProductType]
+    """``(slug, label)`` pairs from ``FashionProductType`` — usable as form ``choices``."""
+    choices = list(FashionProductType.choices)
     if include_blank:
         return [*BLANK_CHOICE_DASH, *choices]
     return choices
 
 
 class FashionProductTypeFormField(forms.ChoiceField):
-    """Select whose options always follow ``ProductType``.
+    """Select whose options always follow ``FashionProductType``.
 
     Callers cannot replace the option list: ``choices`` is rebuilt from
-    ``ProductType`` whenever it is set. A blank option is included when the
-    field is not required. The posted value is the product-type slug.
+    ``FashionProductType`` whenever it is set. Labels are translatable.
+    A blank option is included when the field is not required. The posted
+    value is the product-type slug.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -144,8 +146,8 @@ class FashionProductTypeField(models.CharField):
 
     Reading and writing behave like ``CharField``. Forms use
     ``FashionProductTypeFormField``, whose options always come from
-    ``ProductType``. Passed ``choices`` are ignored so a stale list cannot
-    replace the current product types.
+    ``FashionProductType``. Passed ``choices`` are ignored so a stale list
+    cannot replace the current product types.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:

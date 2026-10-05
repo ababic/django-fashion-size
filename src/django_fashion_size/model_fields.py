@@ -8,7 +8,9 @@ from typing import Any
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models.fields import BLANK_CHOICE_DASH
 from django.db.models.query_utils import DeferredAttribute
+from fashion_size.product_types import ProductType
 from fashion_size.types import (
     SIZE_UNIT_BY_SLUG,
     Size,
@@ -104,6 +106,62 @@ class SizeUnitField(models.CharField):
         # Choice fields ignore ``form_class`` and fall back to TypedChoiceField
         # unless ``choices_form_class`` is set.
         kwargs["choices_form_class"] = SizeUnitFormField
+        return super().formfield(**kwargs)
+
+
+def product_type_choices(*, include_blank: bool = False) -> list[tuple[str, str]]:
+    """``(slug, label)`` pairs for every ``ProductType`` — usable as form ``choices``."""
+    choices = [(product_type.value, product_type.label) for product_type in ProductType]
+    if include_blank:
+        return [*BLANK_CHOICE_DASH, *choices]
+    return choices
+
+
+class FashionProductTypeFormField(forms.ChoiceField):
+    """Select whose options always follow ``ProductType``.
+
+    Callers cannot replace the option list: ``choices`` is rebuilt from
+    ``ProductType`` whenever it is set. A blank option is included when the
+    field is not required. The posted value is the product-type slug.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.pop("choices", None)
+        kwargs.pop("coerce", None)
+        kwargs.pop("empty_value", None)
+        kwargs.pop("max_length", None)
+        super().__init__(*args, **kwargs)
+
+    @forms.ChoiceField.choices.setter
+    def choices(self, _value: Any) -> None:
+        include_blank = not getattr(self, "required", True)
+        choices = product_type_choices(include_blank=include_blank)
+        self._choices = self.widget.choices = choices
+
+
+class FashionProductTypeField(models.CharField):
+    """Product-type slug stored as text.
+
+    Reading and writing behave like ``CharField``. Forms use
+    ``FashionProductTypeFormField``, whose options always come from
+    ``ProductType``. Passed ``choices`` are ignored so a stale list cannot
+    replace the current product types.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.pop("choices", None)
+        kwargs.setdefault("max_length", 40)
+        super().__init__(*args, **kwargs)
+
+    def deconstruct(self) -> tuple[str, str, list[Any], dict[str, Any]]:
+        name, path, args, kwargs = super().deconstruct()
+        if kwargs.get("max_length") == 40:
+            del kwargs["max_length"]
+        kwargs.pop("choices", None)
+        return name, path, args, kwargs
+
+    def formfield(self, **kwargs: Any) -> forms.Field:
+        kwargs.setdefault("form_class", FashionProductTypeFormField)
         return super().formfield(**kwargs)
 
 

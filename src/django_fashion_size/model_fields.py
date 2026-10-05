@@ -138,12 +138,22 @@ def resolve_size_unit(instance: models.Model, size_unit_field: str) -> SizeUnit 
     return parse_size_unit_slug(str(current))
 
 
+def _format_length_token(raw: Any) -> str:
+    """Exact length token. ``81.28`` stays ``81.28``; whole numbers drop the decimal."""
+    text = format(raw, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text or "0"
+
+
 def stored_size_token(value: Any) -> str:
-    """Column text for a size: ``10``, ``7.5``, ``DD``, or blank."""
+    """Column text for a size: ``10``, ``7.5``, ``DD``, ``81.28``, or blank."""
     if isinstance(value, Size):
         raw = value.raw
         if isinstance(raw, str):
             return raw
+        if value.size_unit.length_unit:
+            return _format_length_token(raw)
         return format_raw(raw)
     if value is None:
         return ""
@@ -262,3 +272,13 @@ class SizeField(models.CharField):
         except (InvalidOperation, ValueError, TypeError) as exc:
             raise ValidationError(f"Invalid size {token!r}.") from exc
         return token
+
+    def formfield(self, **kwargs: Any) -> forms.Field:
+        from django_fashion_size.widgets import SizeFormField, SizeValueWidget
+
+        kwargs.setdefault("form_class", SizeFormField)
+        kwargs.setdefault("widget", SizeValueWidget())
+        form_class = kwargs["form_class"]
+        if isinstance(form_class, type) and issubclass(form_class, SizeFormField):
+            kwargs["size_unit_field"] = self.size_unit_field
+        return super().formfield(**kwargs)

@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild size_value_field/mount.jsx --bundle --format=iife --jsx=automatic --minify --define:process.env.NODE_ENV=\\\"production\\\" --outfile=../src/django_fashion_size/static/django_fashion_size/size_value_field.js && cp size_value_field/size_value_field.css ../src/django_fashion_size/static/django_fashion_size/size_value_field.css"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

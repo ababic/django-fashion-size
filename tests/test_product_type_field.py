@@ -14,6 +14,7 @@ if not settings.configured:
     )
     django.setup()
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils.functional import Promise
 from fashion_size.product_types import ProductType
@@ -122,6 +123,30 @@ def test_deconstruct_keeps_max_length_and_omits_choices() -> None:
     assert max(len(member.value) for member in FashionProductType) < PRODUCT_TYPE_MAX_LENGTH
 
 
+def test_model_field_rejects_unknown_product_type() -> None:
+    field = CatalogItem._meta.get_field("product_type")
+    item = CatalogItem()
+    assert field.clean("shoes", item) is ProductType.SHOES
+    assert field.clean(ProductType.SHOES, item) is ProductType.SHOES
+    assert field.clean(FashionProductType.SHOES, item) is ProductType.SHOES
+    assert field.clean("", item) is None
+    try:
+        field.clean("not-a-product", item)
+    except ValidationError as exc:
+        assert exc.code == "invalid_choice"
+        assert "not-a-product" in str(exc)
+    else:
+        raise AssertionError("expected ValidationError")
+    item.product_type = "not-a-product"
+    try:
+        item.full_clean()
+    except ValidationError as exc:
+        assert "product_type" in exc.message_dict
+        assert exc.message_dict["product_type"][0]
+    else:
+        raise AssertionError("expected ValidationError")
+
+
 def test_model_form_validates_posted_slug() -> None:
     valid = CatalogItemForm(data={"product_type": "shoes"})
     assert valid.is_valid(), valid.errors
@@ -141,5 +166,6 @@ if __name__ == "__main__":
     test_model_formfield_uses_the_product_type_form_field()
     test_model_field_ignores_constructor_choices()
     test_deconstruct_keeps_max_length_and_omits_choices()
+    test_model_field_rejects_unknown_product_type()
     test_model_form_validates_posted_slug()
     print("ok")

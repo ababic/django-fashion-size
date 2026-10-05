@@ -160,7 +160,8 @@ class FashionProductTypeField(models.CharField):
 
     The column stores the slug. Reading the field returns a
     ``fashion_size.product_types.ProductType``, or ``None`` when the value
-    is blank or not a known product type. Forms use
+    is blank or not a known product type. ``clean`` / ``full_clean`` reject
+    values that are not in ``FashionProductType.values``. Forms use
     ``FashionProductTypeFormField``, whose options always come from
     ``FashionProductType``. Passed ``choices`` are ignored so a stale list
     cannot replace the current product types. ``max_length`` defaults to 64
@@ -196,6 +197,32 @@ class FashionProductTypeField(models.CharField):
         product_type = self.to_python(getattr(model_instance, self.attname))
         setattr(model_instance, self.attname, product_type)
         return "" if product_type is None else product_type.value
+
+    def _slug_for_validation(self, value: Any) -> str:
+        if isinstance(value, ProductType):
+            return value.value
+        if value is None:
+            return ""
+        return str(value).strip().lower()
+
+    def _validate_known_product_type(self, value: Any) -> None:
+        slug = self._slug_for_validation(value)
+        if slug and slug not in FashionProductType.values:
+            raise ValidationError(
+                self.error_messages["invalid_choice"],
+                code="invalid_choice",
+                params={"value": value},
+            )
+
+    def validate(self, value: Any, model_instance: models.Model) -> None:
+        self._validate_known_product_type(value)
+        super().validate(value, model_instance)
+
+    def clean(self, value: Any, model_instance: models.Model) -> ProductType | None:
+        # ``to_python`` maps unknown slugs to ``None``; check first so
+        # ``full_clean`` fails instead of treating them as blank.
+        self._validate_known_product_type(value)
+        return super().clean(value, model_instance)
 
     def formfield(self, **kwargs: Any) -> forms.Field:
         kwargs.setdefault("form_class", FashionProductTypeFormField)

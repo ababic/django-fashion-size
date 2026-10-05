@@ -71,17 +71,6 @@ function identitySuggestions(choices) {
   };
 }
 
-function caseHeading(context) {
-  const demographic = context?.demographic_label || "";
-  const productType = context?.product_type_name || "";
-  const group = context?.product_type_group_name || "";
-  const typeLine =
-    productType && group && productType !== group
-      ? `${productType} · ${group}`
-      : productType || group;
-  return [demographic, typeLine].filter(Boolean).join(" · ");
-}
-
 function rowMatchesStored(row, stored, storageFormat) {
   const cell = String(row?.[storageFormat] || "")
     .trim()
@@ -642,23 +631,18 @@ export function SizeValueField({
                 width: chartBox.width,
               }}
             >
-              <p className="size-value__chart-case">
-                {caseHeading(context) || chart.demographic}
-              </p>
               <p className="size-value__chart-name">{chart.name}</p>
               {chart.fallback_note ? (
                 <p className="size-value__chart-note">{chart.fallback_note}</p>
               ) : null}
-              <p className="size-value__chart-meta">
-                <span>Source</span>
-                {/^https?:\/\//i.test(chart.source || "") ? (
+              {/^https?:\/\//i.test(chart.source || "") ? (
+                <p className="size-value__chart-meta">
+                  <span>Source</span>
                   <a href={chart.source} target="_blank" rel="noreferrer">
                     {chart.source}
                   </a>
-                ) : (
-                  <span>{chart.source}</span>
-                )}
-              </p>
+                </p>
+              ) : null}
               {chart.notes ? (
                 <p className="size-value__chart-meta">
                   <span>Notes</span>

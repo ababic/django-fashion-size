@@ -71,6 +71,30 @@ function identitySuggestions(choices) {
   };
 }
 
+function caseHeading(context) {
+  const demographic = context?.demographic_label || "";
+  const productType = context?.product_type_name || "";
+  const group = context?.product_type_group_name || "";
+  const typeLine =
+    productType && group && productType !== group
+      ? `${productType} · ${group}`
+      : productType || group;
+  return [demographic, typeLine].filter(Boolean).join(" · ");
+}
+
+function rowMatchesStored(row, stored, storageFormat) {
+  const cell = String(row?.[storageFormat] || "")
+    .trim()
+    .toLowerCase();
+  const needle = String(stored || "")
+    .trim()
+    .toLowerCase();
+  if (!cell || !needle) {
+    return false;
+  }
+  return needle === cell || needle.endsWith(` ${cell}`);
+}
+
 function localStored({ measurement, bundles, format, text }) {
   const typed = text.trim();
   if (!typed) {
@@ -176,13 +200,18 @@ export function SizeValueField({
 }) {
   const listId = useId();
   const rootRef = useRef(null);
+  const controlRef = useRef(null);
   const inputRef = useRef(null);
+  const linkRef = useRef(null);
   const [format, setFormat] = useState(() =>
     defaultFormat(measurement, context)
   );
   const [values, setValues] = useState([]);
+  const [chart, setChart] = useState(null);
   const [text, setText] = useState(storedValue || "");
   const [open, setOpen] = useState(false);
+  const [chartOpen, setChartOpen] = useState(false);
+  const [chartBox, setChartBox] = useState(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [menuBox, setMenuBox] = useState(null);
   const [resolveError, setResolveError] = useState("");
@@ -194,6 +223,7 @@ export function SizeValueField({
       .then((next) => {
         if (!cancelled) {
           setValues(next.values);
+          setChart(next.chart);
         }
       })
       .catch(() => {
@@ -203,6 +233,7 @@ export function SizeValueField({
               ? identitySuggestions(choices)
               : { values: [], chart: null };
           setValues(fallback.values);
+          setChart(fallback.chart);
         }
       });
     return () => {
@@ -249,7 +280,7 @@ export function SizeValueField({
       return undefined;
     }
     const place = () => {
-      const node = rootRef.current;
+      const node = controlRef.current;
       if (!node) {
         return;
       }
@@ -392,8 +423,79 @@ export function SizeValueField({
     }
     if (event.key === "Escape") {
       setOpen(false);
+      setChartOpen(false);
     }
   };
+
+  useEffect(() => {
+    if (!chartOpen) {
+      return undefined;
+    }
+    const place = () => {
+      const node = linkRef.current;
+      if (!node) {
+        return;
+      }
+      const rect = node.getBoundingClientRect();
+      const width = Math.min(380, window.innerWidth - 16);
+      let left = rect.right - width;
+      if (left < 8) {
+        left = 8;
+      }
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const openUp = spaceBelow < 260 && rect.top > spaceBelow;
+      setChartBox({
+        top: openUp ? undefined : rect.bottom + 6,
+        bottom: openUp ? window.innerHeight - rect.top + 6 : undefined,
+        left,
+        width,
+      });
+    };
+    place();
+    window.addEventListener("scroll", place, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", place, true);
+      window.removeEventListener("resize", place);
+    };
+  }, [chartOpen, chart]);
+
+  useEffect(() => {
+    if (!chartOpen) {
+      return undefined;
+    }
+    const onPointer = (event) => {
+      if (rootRef.current?.contains(event.target)) {
+        return;
+      }
+      if (event.target?.closest?.(".size-value__chart-popover")) {
+        return;
+      }
+      setChartOpen(false);
+    };
+    const onKey = (event) => {
+      if (event.key === "Escape") {
+        setChartOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [chartOpen]);
+
+  useEffect(() => {
+    if (!chartOpen) {
+      return undefined;
+    }
+    const row = document.querySelector(
+      ".size-value__chart-popover .is-current"
+    );
+    row?.scrollIntoView({ block: "nearest" });
+    return undefined;
+  }, [chartOpen, storedValue, chart, format]);
 
   useEffect(() => {
     onEntry?.({ text, format });
@@ -426,7 +528,8 @@ export function SizeValueField({
         disabled ? " is-disabled" : ""
       }`}
     >
-      <div className="size-value__control">
+      <div className="size-value__row">
+      <div className="size-value__control" ref={controlRef}>
         {side === "left" ? formatSelect : null}
         <input
           ref={inputRef}
@@ -463,6 +566,24 @@ export function SizeValueField({
           onKeyDown={onKeyDown}
         />
         {side === "right" ? formatSelect : null}
+      </div>
+      {chart ? (
+        <button
+          ref={linkRef}
+          type="button"
+          className="size-value__chart-link"
+          aria-expanded={chartOpen}
+          aria-haspopup="dialog"
+          aria-label={`Show ${chart.name}`}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            setOpen(false);
+            setChartOpen((current) => !current);
+          }}
+        >
+          Chart
+        </button>
+      ) : null}
       </div>
       {resolveError ? (
         <p className="size-value__error" role="alert">
@@ -505,6 +626,101 @@ export function SizeValueField({
                 </li>
               ))}
             </ul>,
+            document.body
+          )
+        : null}
+      {chartOpen && chart && chartBox
+        ? createPortal(
+            <div
+              className="size-value__chart-popover"
+              role="dialog"
+              aria-label={chart.name}
+              style={{
+                position: "fixed",
+                top: chartBox.top,
+                bottom: chartBox.bottom,
+                left: chartBox.left,
+                width: chartBox.width,
+              }}
+            >
+              <p className="size-value__chart-case">
+                {caseHeading(context) || chart.demographic}
+              </p>
+              <p className="size-value__chart-name">{chart.name}</p>
+              {chart.fallback_note ? (
+                <p className="size-value__chart-note">{chart.fallback_note}</p>
+              ) : null}
+              <p className="size-value__chart-meta">
+                <span>Source</span>
+                {/^https?:\/\//i.test(chart.source || "") ? (
+                  <a href={chart.source} target="_blank" rel="noreferrer">
+                    {chart.source}
+                  </a>
+                ) : (
+                  <span>{chart.source}</span>
+                )}
+              </p>
+              {chart.notes ? (
+                <p className="size-value__chart-meta">
+                  <span>Notes</span>
+                  <span>{chart.notes}</span>
+                </p>
+              ) : null}
+              <p className="size-value__chart-meta">
+                <span>Covers</span>
+                <span>
+                  {chart.groups?.length
+                    ? chart.groups.join(", ")
+                    : "Every product type"}
+                </span>
+              </p>
+              <div className="size-value__chart-table-wrap">
+                <table className="size-value__chart-table">
+                  <thead>
+                    <tr>
+                      {chart.columns.map((column) => (
+                        <th
+                          key={column.key}
+                          className={
+                            column.key === format ? "is-format" : undefined
+                          }
+                        >
+                          {column.label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {chart.rows.map((row) => {
+                      const current = rowMatchesStored(
+                        row,
+                        storedValue,
+                        measurement.storage_format
+                      );
+                      return (
+                        <tr
+                          key={chart.columns
+                            .map((column) => row[column.key])
+                            .join("|")}
+                          className={current ? "is-current" : undefined}
+                        >
+                          {chart.columns.map((column) => (
+                            <td
+                              key={column.key}
+                              className={
+                                column.key === format ? "is-format" : undefined
+                              }
+                            >
+                              {row[column.key]}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>,
             document.body
           )
         : null}

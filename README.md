@@ -12,14 +12,14 @@ The source repository is [github.com/ababic/django-fashion-size](https://github.
 pip install django-fashion-size
 ```
 
-Supported Django versions are **4.2**, **5.2**, **6.0**, and **6.1** (see `django>=4.2` in `pyproject.toml`). CI runs the test suite against each of those releases and against [Django's `main` branch](https://github.com/django/django/tree/main).
+Supported Django versions are **6.0** and **6.1** (see `django>=6.0,<7` in `pyproject.toml`). CI runs the test suite against each of those releases and against [Django's `main` branch](https://github.com/django/django/tree/main).
 
 ```bash
 pip install tox
 tox
 ```
 
-To run a single environment, for example Django 4.2: `tox -e py312-django42`.
+To run a single environment, for example Django 6.0: `tox -e py312-django60`.
 
 A release is a `vX.Y.Z` tag matching the version in `pyproject.toml`. Building the package compiles the size field's CSS and JavaScript from `frontend/` into the static files the widget serves. That compile step runs in the release workflow, and it needs Node.js when you build from this repository. An install from PyPI uses the compiled files and does not need Node.
 

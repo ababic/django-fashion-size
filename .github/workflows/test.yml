@@ -21,8 +21,6 @@ jobs:
       fail-fast: false
       matrix:
         env:
-          - py312-django42
-          - py312-django52
           - py312-django60
           - py312-django61
           - py312-djangomain

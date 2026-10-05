@@ -4,14 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "django-fashion-size"
-version = "0.1.0"
+version = "0.1.1"
 description = "Django fields for fashion-size size units and stored sizes."
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [{ name = "Andy Babic" }]
 dependencies = [
     "django>=4.2",
-    "fashion-size",
+    "fashion-size>=0.1.1",
 ]
 
 [project.urls]

@@ -216,7 +216,7 @@ class FashionProductTypeField(models.CharField):
 
     def validate(self, value: Any, model_instance: models.Model) -> None:
         self._validate_known_product_type(value)
-        super().validate(value, model_instance)
+        super().validate(self._slug_for_validation(value), model_instance)
 
     def clean(self, value: Any, model_instance: models.Model) -> ProductType | None:
         # ``to_python`` maps unknown slugs to ``None``; check first so

@@ -10,7 +10,6 @@ render as ``32"`` / ``81cm`` in English and ``32 in`` / ``81 cm`` otherwise.
 """
 
 from django.utils.translation import get_language
-
 from fashion_size import register_display_language
 from fashion_size.types import Size
 

@@ -9,7 +9,6 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models.query_utils import DeferredAttribute
-
 from fashion_size.types import (
     SIZE_UNIT_BY_SLUG,
     Size,

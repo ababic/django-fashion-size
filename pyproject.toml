@@ -14,6 +14,15 @@ dependencies = [
     "fashion-size",
 ]
 
+[project.optional-dependencies]
+testing = [
+    "pytest>=8",
+    "tox>=4",
+]
+development = [
+    "ruff>=0.11,<1",
+]
+
 [project.urls]
 Repository = "https://github.com/ababic/django-fashion-size"
 
@@ -30,3 +39,17 @@ artifacts = [
     "src/django_fashion_size/static/django_fashion_size/size_value_field.css",
     "src/django_fashion_size/static/django_fashion_size/size_value_field.js",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+ignore = ["RUF012"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["E402", "I001"]

@@ -198,7 +198,8 @@ class SizeField(models.CharField):
     ``size_unit_field`` names the ``SizeUnitField`` that says what the token
     means. It may live on this model (``size_unit``) or across relations
     (``attribute.size_unit``, or ``attribute__size_unit``). Reading the field
-    returns a ``Size``; call ``.convert()`` on that value. Writing a
+    returns a ``Size``; call ``.convert()`` or ``.convert_to_locale()`` on that
+    value (with a ``Demographic`` from ``fashion_size``). Writing a
     ``Size``, a number, or a size token stores the raw token
     (``10``, ``7.5``, ``DD``).
     """

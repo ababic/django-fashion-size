@@ -226,6 +226,14 @@ class FashionProductTypeField(models.CharField):
 
     def formfield(self, **kwargs: Any) -> forms.Field:
         kwargs.setdefault("form_class", FashionProductTypeFormField)
+        # Django admin walks the field MRO and applies CharField's
+        # AdminTextInputWidget. That would replace the select, so drop
+        # text inputs and keep an explicit choice widget.
+        widget = kwargs.get("widget")
+        if widget is not None:
+            widget_class = widget if isinstance(widget, type) else type(widget)
+            if issubclass(widget_class, forms.TextInput):
+                kwargs.pop("widget")
         return super().formfield(**kwargs)
 
 

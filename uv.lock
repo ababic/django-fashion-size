@@ -73,7 +73,7 @@ testing = [
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = ">=6.0,<7" },
-    { name = "fashion-size" },
+    { name = "fashion-size", specifier = ">=2026.10.6" },
     { name = "pytest", marker = "extra == 'testing'", specifier = ">=8" },
     { name = "ruff", marker = "extra == 'development'", specifier = ">=0.11,<1" },
     { name = "tox", marker = "extra == 'testing'", specifier = ">=4" },
@@ -82,11 +82,11 @@ provides-extras = ["testing", "development"]
 
 [[package]]
 name = "fashion-size"
-version = "1.0.0"
+version = "2026.10.6"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/6e/e8/260f24a6f98778d54a488fe53cf447dbc6597dd038389ca66067075846ef/fashion_size-1.0.0.tar.gz", hash = "sha256:27d1350dd332182a892835c84609bde9462c1618d8a857b54f87782059573182", size = 31072, upload-time = "2026-10-05T11:31:39.372Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/3c/c0/ec2c289e98e45ac3a8564b70d02f3bf5c14a602cd440bb5245fbdae005b4/fashion_size-2026.10.6.tar.gz", hash = "sha256:e38012b651dc19d625932040262acb0512587ac6dcd4fd28339cfcc3ab4205f5", size = 32369, upload-time = "2026-10-06T13:40:35.037Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/db/7a/c63d2c92b986334abd535f1adff2d6c8b1dc8cc4baf104e506062a5cacf5/fashion_size-1.0.0-py3-none-any.whl", hash = "sha256:e50d54f2ed83548b45ef9be6dc8cf98632c47dba96911c0e8b111870f0ee9e84", size = 36645, upload-time = "2026-10-05T11:31:37.729Z" },
+    { url = "https://files.pythonhosted.org/packages/22/d5/35db4593a7a1d62eb167117d0954e87423867604d3d4c487258af2d740b3/fashion_size-2026.10.6-py3-none-any.whl", hash = "sha256:1e032bac23f7214a591671de6a447bde242709cd6b00f9d87f28f5d119d4e239", size = 37342, upload-time = "2026-10-06T13:40:33.741Z" },
 ]
 
 [[package]]

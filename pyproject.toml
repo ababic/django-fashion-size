@@ -11,7 +11,7 @@ requires-python = ">=3.12"
 authors = [{ name = "Andy Babic" }]
 dependencies = [
     "django>=6.0,<7",
-    "fashion-size",
+    "fashion-size>=2026.10.6",
 ]
 
 [project.optional-dependencies]

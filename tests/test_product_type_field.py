@@ -50,6 +50,10 @@ def test_fashion_product_type_mirrors_product_type_with_translatable_labels() ->
     assert all(isinstance(member.label, Promise) for member in FashionProductType)
     assert FashionProductType.SHOES == "shoes"
     assert str(FashionProductType.SHOES.label) == "Shoes"
+    assert FashionProductType.SUITS == "suits"
+    assert str(FashionProductType.SUITS.label) == "Suits & Tailoring"
+    assert "SUIT_JACKETS" not in FashionProductType.__members__
+    assert "suit-jackets" not in FashionProductType.values
 
 
 def test_model_field_returns_product_type_or_none() -> None:
@@ -59,6 +63,8 @@ def test_model_field_returns_product_type_or_none() -> None:
     assert field.to_python("shoes") is ProductType.SHOES
     assert field.to_python(ProductType.SHOES) is ProductType.SHOES
     assert field.to_python(FashionProductType.SHOES) is ProductType.SHOES
+    assert field.to_python("suit-jackets") is ProductType.SUITS
+    assert field.get_prep_value("suit-jackets") == "suits"
     assert field.to_python("") is None
     assert field.to_python(None) is None
     assert field.to_python("not-a-product") is None
@@ -83,6 +89,8 @@ def test_form_field_options_match_product_type() -> None:
     expected = product_type_choices()
     assert list(field.choices) == expected
     assert ("shoes", "Shoes") in [(value, str(label)) for value, label in field.choices]
+    assert ("suits", "Suits & Tailoring") in [(value, str(label)) for value, label in field.choices]
+    assert "suit-jackets" not in [value for value, _label in field.choices]
     assert len(field.choices) == len(FashionProductType)
 
 
@@ -152,6 +160,7 @@ def test_model_field_rejects_unknown_product_type() -> None:
     assert field.clean("shoes", item) is ProductType.SHOES
     assert field.clean(ProductType.SHOES, item) is ProductType.SHOES
     assert field.clean(FashionProductType.SHOES, item) is ProductType.SHOES
+    assert field.clean("suit-jackets", item) is ProductType.SUITS
     assert field.clean("", item) is None
     try:
         field.clean("not-a-product", item)

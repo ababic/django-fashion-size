@@ -161,7 +161,7 @@ class FashionProductTypeField(models.CharField):
     The column stores the slug. Reading the field returns a
     ``fashion_size.product_types.ProductType``, or ``None`` when the value
     is blank or not a known product type. ``clean`` / ``full_clean`` reject
-    values that are not in ``FashionProductType.values``. Forms use
+    values that ``fashion_size`` cannot resolve. Forms use
     ``FashionProductTypeFormField``, whose options always come from
     ``FashionProductType``. Passed ``choices`` are ignored so a stale list
     cannot replace the current product types. ``max_length`` defaults to 64
@@ -207,12 +207,16 @@ class FashionProductTypeField(models.CharField):
 
     def _validate_known_product_type(self, value: Any) -> None:
         slug = self._slug_for_validation(value)
-        if slug and slug not in FashionProductType.values:
+        if not slug:
+            return
+        try:
+            resolve_product_type(slug)
+        except ValueError:
             raise ValidationError(
                 self.error_messages["invalid_choice"],
                 code="invalid_choice",
                 params={"value": value},
-            )
+            ) from None
 
     def validate(self, value: Any, model_instance: models.Model) -> None:
         self._validate_known_product_type(value)

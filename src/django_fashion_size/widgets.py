@@ -19,11 +19,7 @@ from django.utils.safestring import mark_safe
 from fashion_size.brands import BrandName, resolve_brand_name
 from fashion_size.charts import chart_for
 from fashion_size.demographics import AgeGroup, Demographic, Gender
-from fashion_size.product_types import (
-    PRODUCT_TYPE_SLUGS,
-    ProductType,
-    resolve_product_type,
-)
+from fashion_size.product_types import ProductType, resolve_product_type
 from fashion_size.scales import default_scale
 from fashion_size.types import (
     FRENCH_BAND_OFFSET,
@@ -136,13 +132,14 @@ def _slug_from_product_type_text(text: str) -> str:
     cleaned = text.strip()
     if not cleaned:
         return ""
-    lowered = cleaned.lower()
-    if lowered in PRODUCT_TYPE_SLUGS:
-        return lowered
+    try:
+        return resolve_product_type(cleaned).value
+    except ValueError:
+        pass
     for product_type in ProductType:
         if product_type.label.casefold() == cleaned.casefold():
             return product_type.value
-    return lowered
+    return cleaned.lower()
 
 
 def _demographic_label(age_group: str, gender: str) -> str:

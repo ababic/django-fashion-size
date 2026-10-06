@@ -14,8 +14,12 @@ if not settings.configured:
     )
     django.setup()
 
+from django.contrib.admin import ModelAdmin
+from django.contrib.admin.sites import AdminSite
+from django.contrib.admin.widgets import AdminTextInputWidget
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.test import RequestFactory
 from django.utils.functional import Promise
 from fashion_size.product_types import ProductType
 
@@ -101,8 +105,27 @@ def test_optional_form_field_includes_a_blank_option() -> None:
 def test_model_formfield_uses_the_product_type_form_field() -> None:
     form_field = CatalogItem._meta.get_field("product_type").formfield()
     assert isinstance(form_field, FashionProductTypeFormField)
+    assert isinstance(form_field.widget, forms.Select)
     assert "shoes" in _choice_values(form_field)
     assert _choice_values(form_field)[0] == ""
+
+
+def test_model_formfield_keeps_the_select_when_admin_passes_a_text_widget() -> None:
+    field = CatalogItem._meta.get_field("product_type")
+    form_field = field.formfield(widget=AdminTextInputWidget)
+    assert isinstance(form_field, FashionProductTypeFormField)
+    assert isinstance(form_field.widget, forms.Select)
+    assert "shoes" in _choice_values(form_field)
+
+    radio = field.formfield(widget=forms.RadioSelect)
+    assert isinstance(radio.widget, forms.RadioSelect)
+
+    request = RequestFactory().get("/")
+    admin_field = ModelAdmin(CatalogItem, AdminSite()).formfield_for_dbfield(
+        field, request
+    )
+    assert isinstance(admin_field, FashionProductTypeFormField)
+    assert isinstance(admin_field.widget, forms.Select)
 
 
 def test_model_field_ignores_constructor_choices() -> None:
@@ -164,6 +187,7 @@ if __name__ == "__main__":
     test_form_field_ignores_supplied_and_assigned_choices()
     test_optional_form_field_includes_a_blank_option()
     test_model_formfield_uses_the_product_type_form_field()
+    test_model_formfield_keeps_the_select_when_admin_passes_a_text_widget()
     test_model_field_ignores_constructor_choices()
     test_deconstruct_keeps_max_length_and_omits_choices()
     test_model_field_rejects_unknown_product_type()

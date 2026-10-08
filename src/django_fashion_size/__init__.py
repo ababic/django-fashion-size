@@ -1,5 +1,6 @@
 """Django fields for fashion sizes.
 
+``SizeTypeField`` stores a size-type slug and returns a ``SizeType``.
 ``SizeUnitField`` stores a size-unit slug and returns a ``SizeUnit``.
 ``SizeField`` stores a size token and returns a ``Size``.
 ``FashionProductTypeField`` stores a product-type slug and returns a
@@ -16,11 +17,13 @@ from django.utils.translation import get_language
 from fashion_size import register_display_language
 from fashion_size.types import Size
 
-from django_fashion_size.kinds import FashionProductType, SizeTypeSlug
+from django_fashion_size.kinds import FashionProductType, SizeTypeSlug, SizeUnitSlug
 from django_fashion_size.model_fields import (
     FashionProductTypeField,
     FashionProductTypeFormField,
     SizeField,
+    SizeTypeField,
+    SizeTypeFormField,
     SizeUnitField,
     SizeUnitFormField,
 )
@@ -41,8 +44,11 @@ __all__ = [
     "FashionProductTypeFormField",
     "SizeField",
     "SizeFormField",
+    "SizeTypeField",
+    "SizeTypeFormField",
     "SizeTypeSlug",
     "SizeUnitField",
     "SizeUnitFormField",
+    "SizeUnitSlug",
     "SizeValueWidget",
 ]

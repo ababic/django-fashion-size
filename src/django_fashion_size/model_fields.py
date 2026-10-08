@@ -1,4 +1,4 @@
-"""Django fields for a size unit and a stored size."""
+"""Django fields for a size type, a size unit, and a stored size."""
 
 from __future__ import annotations
 
@@ -12,22 +12,36 @@ from django.db.models.fields import BLANK_CHOICE_DASH
 from django.db.models.query_utils import DeferredAttribute
 from fashion_size.product_types import ProductType, resolve_product_type
 from fashion_size.types import (
+    SIZE_TYPE_BY_SLUG,
     SIZE_UNIT_BY_SLUG,
     Size,
+    SizeType,
     SizeUnit,
     format_raw,
     parse_size_unit_slug,
-    size_unit_choices,
 )
 
-from django_fashion_size.kinds import FashionProductType
+from django_fashion_size.kinds import FashionProductType, SizeTypeSlug, SizeUnitSlug
 
-# One list so ``deconstruct`` can drop the default choices by identity.
-SIZE_UNIT_CHOICES = size_unit_choices()
+
+def _translated_choices(
+    kind: type[models.TextChoices], *, include_blank: bool
+) -> list[tuple[str, str]]:
+    """Slug/label pairs from a ``TextChoices`` enum. Labels stay lazy."""
+    choices = list(kind.choices)
+    if include_blank:
+        return [*BLANK_CHOICE_DASH, *choices]
+    return choices
 
 
 class SizeUnitFormField(forms.TypedChoiceField):
-    """Choice field whose submitted value is a size-unit slug."""
+    """Choice field whose submitted value is a size-unit slug.
+
+    Options always come from ``SizeUnitSlug``. Their labels are
+    ``gettext_lazy`` strings. ``coerce`` is the model field's
+    ``to_python``, so a posted slug becomes a ``SizeUnit`` and the column
+    still stores the slug.
+    """
 
     def prepare_value(self, value: Any) -> Any:
         # The widget matches option values (slugs). ``coerce`` is ``to_python``,
@@ -40,20 +54,28 @@ class SizeUnitFormField(forms.TypedChoiceField):
             return prepared.slug
         return prepared
 
+    @forms.ChoiceField.choices.setter
+    def choices(self, _value: Any) -> None:
+        include_blank = not getattr(self, "required", True)
+        choices = _translated_choices(SizeUnitSlug, include_blank=include_blank)
+        self._choices = self.widget.choices = choices
+
 
 class SizeUnitField(models.CharField):
     """Concrete size unit for an attribute (UK dress size, chest in centimetres, …).
 
     The column stores the size-unit slug. Reading the field returns the
     ``SizeUnit`` instance, or ``None`` when the attribute is not a convertible
-    size. Assign a ``SizeUnit`` or its slug.
+    size. Assign a ``SizeUnit`` or its slug. The select uses ``SizeUnitSlug``
+    labels.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.pop("choices", None)
         kwargs.setdefault("max_length", 40)
         kwargs.setdefault("blank", True)
         kwargs.setdefault("default", "")
-        kwargs.setdefault("choices", SIZE_UNIT_CHOICES)
+        kwargs["choices"] = list(SizeUnitSlug.choices)
         super().__init__(*args, **kwargs)
 
     def deconstruct(self) -> tuple[str, str, list[Any], dict[str, Any]]:
@@ -64,11 +86,14 @@ class SizeUnitField(models.CharField):
             del kwargs["blank"]
         if kwargs.get("default") == "":
             del kwargs["default"]
-        if kwargs.get("choices") is SIZE_UNIT_CHOICES:
+        # Labels are translated at render time. Migrations do not store them.
+        if kwargs.get("choices") == list(SizeUnitSlug.choices):
             del kwargs["choices"]
         return name, path, args, kwargs
 
-    def from_db_value(self, value: str | None, expression: object, connection: object) -> SizeUnit | None:
+    def from_db_value(
+        self, value: str | None, expression: object, connection: object
+    ) -> SizeUnit | None:
         return self.to_python(value)
 
     def to_python(self, value: Any) -> SizeUnit | None:
@@ -108,6 +133,111 @@ class SizeUnitField(models.CharField):
         # Choice fields ignore ``form_class`` and fall back to TypedChoiceField
         # unless ``choices_form_class`` is set.
         kwargs["choices_form_class"] = SizeUnitFormField
+        return super().formfield(**kwargs)
+
+
+class SizeTypeFormField(forms.TypedChoiceField):
+    """Choice field whose submitted value is a size-type slug.
+
+    Options always come from ``SizeTypeSlug``. Their labels are
+    ``gettext_lazy`` strings. ``coerce`` is the model field's
+    ``to_python``, so a posted slug becomes a ``SizeType`` and the column
+    still stores the slug.
+    """
+
+    def prepare_value(self, value: Any) -> Any:
+        # The widget matches option values (slugs). ``coerce`` is ``to_python``,
+        # which returns a ``SizeType``; its string form is the label, so a
+        # saved value would render as an unselected blank.
+        if isinstance(value, SizeType):
+            return str(value.slug)
+        prepared = super().prepare_value(value)
+        if isinstance(prepared, SizeType):
+            return str(prepared.slug)
+        return prepared
+
+    @forms.ChoiceField.choices.setter
+    def choices(self, _value: Any) -> None:
+        include_blank = not getattr(self, "required", True)
+        choices = _translated_choices(SizeTypeSlug, include_blank=include_blank)
+        self._choices = self.widget.choices = choices
+
+
+class SizeTypeField(models.CharField):
+    """Size type for an attribute (dress size, adult shoe size, chest, …).
+
+    The column stores the size-type slug (``dress``, ``adult-shoe``). Reading
+    the field returns the ``SizeType`` instance, or ``None`` when the column
+    is blank. Assign a ``SizeType`` or its slug. The select uses
+    ``SizeTypeSlug`` labels. Each stored size still uses ``SizeUnitField``
+    and ``SizeField`` for the unit and raw token.
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.pop("choices", None)
+        kwargs.setdefault("max_length", 40)
+        kwargs.setdefault("blank", True)
+        kwargs.setdefault("default", "")
+        kwargs["choices"] = list(SizeTypeSlug.choices)
+        super().__init__(*args, **kwargs)
+
+    def deconstruct(self) -> tuple[str, str, list[Any], dict[str, Any]]:
+        name, path, args, kwargs = super().deconstruct()
+        if kwargs.get("max_length") == 40:
+            del kwargs["max_length"]
+        if kwargs.get("blank") is True:
+            del kwargs["blank"]
+        elif self.blank is False:
+            # CharField omits blank=False. This field defaults to blank=True,
+            # so a required field has to say so in the migration.
+            kwargs["blank"] = False
+        if kwargs.get("default") == "":
+            del kwargs["default"]
+        # Labels are translated at render time. Migrations do not store them.
+        if kwargs.get("choices") == list(SizeTypeSlug.choices):
+            del kwargs["choices"]
+        return name, path, args, kwargs
+
+    def from_db_value(
+        self, value: str | None, expression: object, connection: object
+    ) -> SizeType | None:
+        return self.to_python(value)
+
+    def to_python(self, value: Any) -> SizeType | None:
+        if isinstance(value, SizeType) or value is None or value == "":
+            return value or None
+        slug = str(value).strip().lower()
+        try:
+            return SIZE_TYPE_BY_SLUG[slug]
+        except KeyError as exc:
+            raise ValidationError(f"Unknown size type {value!r}.") from exc
+
+    def get_prep_value(self, value: Any) -> str:
+        size_type = self.to_python(value)
+        if size_type is None:
+            return ""
+        return str(size_type.slug)
+
+    def pre_save(self, model_instance: models.Model, add: bool) -> str:
+        size_type = self.to_python(getattr(model_instance, self.attname))
+        setattr(model_instance, self.attname, size_type)
+        return "" if size_type is None else str(size_type.slug)
+
+    def _slug_for_validation(self, value: Any) -> str:
+        if isinstance(value, SizeType):
+            return str(value.slug)
+        if value is None:
+            return ""
+        return str(value).strip().lower()
+
+    def validate(self, value: Any, model_instance: models.Model) -> None:
+        super().validate(self._slug_for_validation(value), model_instance)
+
+    def run_validators(self, value: Any) -> None:
+        super().run_validators(self._slug_for_validation(value))
+
+    def formfield(self, **kwargs: Any) -> forms.Field:
+        kwargs["choices_form_class"] = SizeTypeFormField
         return super().formfield(**kwargs)
 
 
@@ -178,7 +308,9 @@ class FashionProductTypeField(models.CharField):
         kwargs.pop("choices", None)
         return name, path, args, kwargs
 
-    def from_db_value(self, value: str | None, expression: object, connection: object) -> ProductType | None:
+    def from_db_value(
+        self, value: str | None, expression: object, connection: object
+    ) -> ProductType | None:
         return self.to_python(value)
 
     def to_python(self, value: Any) -> ProductType | None:
@@ -306,7 +438,9 @@ class SizeDescriptor(DeferredAttribute):
             return None
         size_unit = resolve_size_unit(instance, self.field.size_unit_field)
         if size_unit is None:
-            raise ValueError(f"Cannot read {self.field.name!r}: {self.field.size_unit_field!r} is empty.")
+            raise ValueError(
+                f"Cannot read {self.field.name!r}: {self.field.size_unit_field!r} is empty."
+            )
         return Size.from_raw(raw, size_unit)
 
     def __set__(self, instance: models.Model, value: Any) -> None:
@@ -355,11 +489,15 @@ class SizeField(models.CharField):
         kwargs["size_unit_field"] = self.size_unit_field
         return name, path, args, kwargs
 
-    def contribute_to_class(self, cls: type[models.Model], name: str, private_only: bool = False) -> None:
+    def contribute_to_class(
+        self, cls: type[models.Model], name: str, private_only: bool = False
+    ) -> None:
         super().contribute_to_class(cls, name, private_only=private_only)
         setattr(cls, name, SizeDescriptor(self))
 
-    def from_db_value(self, value: str | None, expression: object, connection: object) -> str:
+    def from_db_value(
+        self, value: str | None, expression: object, connection: object
+    ) -> str:
         if value is None:
             return ""
         return value

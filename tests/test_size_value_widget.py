@@ -266,7 +266,7 @@ def test_alpha_cup_alias_posts_the_canonical_token() -> None:
     form = _cup_form(size__entry="medium")
     assert form.is_valid(), form.errors
     assert form.cleaned_data["size"] == "MD"
-    large = _cup_form(**{"size__entry": "large", "size__format": "eu"})
+    large = _cup_form(size__entry="large", size__format="eu")
     assert large.is_valid(), large.errors
     assert large.cleaned_data["size"] == "LG"
 
@@ -275,7 +275,7 @@ def test_single_letter_m_stays_a_cup_letter() -> None:
     uk = _cup_form(size__entry="M")
     assert not uk.is_valid()
     assert "not on the chart" in uk.errors["size"][0]
-    eu = _cup_form(**{"size__entry": "M", "size__format": "eu"})
+    eu = _cup_form(size__entry="M", size__format="eu")
     assert eu.is_valid(), eu.errors
     assert eu.cleaned_data["size"] == "J"
 

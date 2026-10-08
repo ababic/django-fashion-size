@@ -61,7 +61,7 @@ value.convert_to_locale(
 
 `FashionProductTypeField` stores a product-type slug (`shoes`). Reading it returns a `fashion_size.product_types.ProductType`, or `None` when the value is blank or not a known product type. `full_clean` rejects values that are not in `FashionProductType.values`. Its default form field is `FashionProductTypeFormField`, a select whose options always come from `FashionProductType`. Passed `choices` are ignored so the list cannot go stale against `fashion-size`.
 
-`SizeTypeSlug` is a Django choices enum with the same values as `fashion_size.size_types.SizeTypeSlug`. `SizeTypeField` stores one of those slugs and returns the `SizeType`. A blank column reads as `None`. Use it when the attribute is the size type, and each value keeps its own source unit and raw token:
+`SizeTypeSlug` and `SizeUnitSlug` are Django `TextChoices` enums. Their values match `fashion-size` (`dress`, `uk-dress-size`). Their labels are `gettext_lazy` strings (`Dress size`, `UK Dress size`), so `makemessages` can collect them. `SizeTypeField` and `SizeUnitField` selects always use those labels, in the active language. Passed `choices` are ignored so a stale list cannot replace them. `SizeTypeField` stores one of the size-type slugs and returns the `SizeType`. A blank column reads as `None`. Use it when the attribute is the size type, and each value keeps its own source unit and raw token:
 
 ```python
 class Attribute(models.Model):

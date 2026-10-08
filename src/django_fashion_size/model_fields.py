@@ -13,25 +13,35 @@ from django.db.models.query_utils import DeferredAttribute
 from fashion_size.product_types import ProductType, resolve_product_type
 from fashion_size.types import (
     SIZE_TYPE_BY_SLUG,
-    SIZE_TYPES,
     SIZE_UNIT_BY_SLUG,
     Size,
     SizeType,
     SizeUnit,
     format_raw,
     parse_size_unit_slug,
-    size_unit_choices,
 )
 
-from django_fashion_size.kinds import FashionProductType
+from django_fashion_size.kinds import FashionProductType, SizeTypeSlug, SizeUnitSlug
 
-# One list so ``deconstruct`` can drop the default choices by identity.
-SIZE_UNIT_CHOICES = size_unit_choices()
-SIZE_TYPE_CHOICES = [(str(size_type.slug), size_type.label) for size_type in SIZE_TYPES]
+
+def _translated_choices(
+    kind: type[models.TextChoices], *, include_blank: bool
+) -> list[tuple[str, str]]:
+    """Slug/label pairs from a ``TextChoices`` enum. Labels stay lazy."""
+    choices = list(kind.choices)
+    if include_blank:
+        return [*BLANK_CHOICE_DASH, *choices]
+    return choices
 
 
 class SizeUnitFormField(forms.TypedChoiceField):
-    """Choice field whose submitted value is a size-unit slug."""
+    """Choice field whose submitted value is a size-unit slug.
+
+    Options always come from ``SizeUnitSlug``. Their labels are
+    ``gettext_lazy`` strings. ``coerce`` is the model field's
+    ``to_python``, so a posted slug becomes a ``SizeUnit`` and the column
+    still stores the slug.
+    """
 
     def prepare_value(self, value: Any) -> Any:
         # The widget matches option values (slugs). ``coerce`` is ``to_python``,
@@ -44,20 +54,28 @@ class SizeUnitFormField(forms.TypedChoiceField):
             return prepared.slug
         return prepared
 
+    @forms.ChoiceField.choices.setter
+    def choices(self, _value: Any) -> None:
+        include_blank = not getattr(self, "required", True)
+        choices = _translated_choices(SizeUnitSlug, include_blank=include_blank)
+        self._choices = self.widget.choices = choices
+
 
 class SizeUnitField(models.CharField):
     """Concrete size unit for an attribute (UK dress size, chest in centimetres, …).
 
     The column stores the size-unit slug. Reading the field returns the
     ``SizeUnit`` instance, or ``None`` when the attribute is not a convertible
-    size. Assign a ``SizeUnit`` or its slug.
+    size. Assign a ``SizeUnit`` or its slug. The select uses ``SizeUnitSlug``
+    labels.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.pop("choices", None)
         kwargs.setdefault("max_length", 40)
         kwargs.setdefault("blank", True)
         kwargs.setdefault("default", "")
-        kwargs.setdefault("choices", SIZE_UNIT_CHOICES)
+        kwargs["choices"] = list(SizeUnitSlug.choices)
         super().__init__(*args, **kwargs)
 
     def deconstruct(self) -> tuple[str, str, list[Any], dict[str, Any]]:
@@ -68,7 +86,8 @@ class SizeUnitField(models.CharField):
             del kwargs["blank"]
         if kwargs.get("default") == "":
             del kwargs["default"]
-        if kwargs.get("choices") is SIZE_UNIT_CHOICES:
+        # Labels are translated at render time. Migrations do not store them.
+        if kwargs.get("choices") == list(SizeUnitSlug.choices):
             del kwargs["choices"]
         return name, path, args, kwargs
 
@@ -118,7 +137,13 @@ class SizeUnitField(models.CharField):
 
 
 class SizeTypeFormField(forms.TypedChoiceField):
-    """Choice field whose submitted value is a size-type slug."""
+    """Choice field whose submitted value is a size-type slug.
+
+    Options always come from ``SizeTypeSlug``. Their labels are
+    ``gettext_lazy`` strings. ``coerce`` is the model field's
+    ``to_python``, so a posted slug becomes a ``SizeType`` and the column
+    still stores the slug.
+    """
 
     def prepare_value(self, value: Any) -> Any:
         # The widget matches option values (slugs). ``coerce`` is ``to_python``,
@@ -131,21 +156,29 @@ class SizeTypeFormField(forms.TypedChoiceField):
             return str(prepared.slug)
         return prepared
 
+    @forms.ChoiceField.choices.setter
+    def choices(self, _value: Any) -> None:
+        include_blank = not getattr(self, "required", True)
+        choices = _translated_choices(SizeTypeSlug, include_blank=include_blank)
+        self._choices = self.widget.choices = choices
+
 
 class SizeTypeField(models.CharField):
     """Size type for an attribute (dress size, adult shoe size, chest, …).
 
     The column stores the size-type slug (``dress``, ``adult-shoe``). Reading
     the field returns the ``SizeType`` instance, or ``None`` when the column
-    is blank. Assign a ``SizeType`` or its slug. Each stored size still uses
-    ``SizeUnitField`` and ``SizeField`` for the unit and raw token.
+    is blank. Assign a ``SizeType`` or its slug. The select uses
+    ``SizeTypeSlug`` labels. Each stored size still uses ``SizeUnitField``
+    and ``SizeField`` for the unit and raw token.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.pop("choices", None)
         kwargs.setdefault("max_length", 40)
         kwargs.setdefault("blank", True)
         kwargs.setdefault("default", "")
-        kwargs.setdefault("choices", SIZE_TYPE_CHOICES)
+        kwargs["choices"] = list(SizeTypeSlug.choices)
         super().__init__(*args, **kwargs)
 
     def deconstruct(self) -> tuple[str, str, list[Any], dict[str, Any]]:
@@ -160,8 +193,8 @@ class SizeTypeField(models.CharField):
             kwargs["blank"] = False
         if kwargs.get("default") == "":
             del kwargs["default"]
-        # Django normalises choices, so the stored list is not the original object.
-        if kwargs.get("choices") == SIZE_TYPE_CHOICES:
+        # Labels are translated at render time. Migrations do not store them.
+        if kwargs.get("choices") == list(SizeTypeSlug.choices):
             del kwargs["choices"]
         return name, path, args, kwargs
 

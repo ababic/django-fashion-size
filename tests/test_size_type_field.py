@@ -17,8 +17,9 @@ if not settings.configured:
     django.setup()
 
 from django.core.exceptions import ValidationError
-from django.db import models
-from fashion_size.types import SIZE_TYPE_BY_SLUG, SIZE_TYPES, SizeType
+from django.db import connection, models
+from django.utils.functional import Promise
+from fashion_size.types import SIZE_TYPES, SIZE_TYPE_BY_SLUG, SizeType
 
 from django_fashion_size import SizeTypeField, SizeTypeFormField, SizeTypeSlug
 
@@ -105,6 +106,30 @@ def test_clean_accepts_a_size_type_or_slug() -> None:
     assert item.size_type is SIZE_TYPE_BY_SLUG["inside-leg"]
 
 
+def test_labels_are_translatable_and_match_fashion_size() -> None:
+    assert [member.value for member in SizeTypeSlug] == [
+        str(size_type.slug) for size_type in SIZE_TYPES
+    ]
+    assert [str(member.label) for member in SizeTypeSlug] == [
+        size_type.label for size_type in SIZE_TYPES
+    ]
+    assert all(isinstance(member.label, Promise) for member in SizeTypeSlug)
+    field = SizeTypeField(choices=[("nope", "Nope")])
+    assert [value for value, _label in field.choices] == [
+        member.value for member in SizeTypeSlug
+    ]
+    form_field = field.formfield()
+    shown = [(value, label) for value, label in form_field.choices if value]
+    assert [value for value, _label in shown] == [
+        member.value for member in SizeTypeSlug
+    ]
+    assert "nope" not in [value for value, _label in shown]
+    assert [(value, str(label)) for value, label in shown] == [
+        (member.value, str(member.label)) for member in SizeTypeSlug
+    ]
+    assert all(isinstance(label, Promise) for _value, label in shown)
+
+
 def test_form_field_posts_a_slug_and_cleans_to_a_size_type() -> None:
     field = Attribute._meta.get_field("size_type")
     form_field = field.formfield()
@@ -121,6 +146,26 @@ def test_form_field_posts_a_slug_and_cleans_to_a_size_type() -> None:
     invalid = AttributeForm(data={"size_type": "dress-size"})
     assert not invalid.is_valid()
     assert "size_type" in invalid.errors
+
+
+def test_model_form_saves_the_posted_slug() -> None:
+    with connection.schema_editor() as editor:
+        editor.create_model(Attribute)
+    item = Attribute.objects.create(size_type="dress")
+    form = AttributeForm(data={"size_type": "adult-shoe"}, instance=item)
+    assert form.is_valid(), form.errors
+    assert form.cleaned_data["size_type"] is SIZE_TYPE_BY_SLUG["adult-shoe"]
+    form.save()
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT size_type FROM {Attribute._meta.db_table} WHERE id = %s",
+            [item.pk],
+        )
+        stored = cursor.fetchone()[0]
+    assert stored == "adult-shoe"
+    assert (
+        Attribute.objects.get(pk=item.pk).size_type is SIZE_TYPE_BY_SLUG["adult-shoe"]
+    )
 
 
 def test_deconstruct_drops_defaults() -> None:

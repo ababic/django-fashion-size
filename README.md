@@ -7,6 +7,8 @@
 
 Django fields for [`fashion-size`](https://github.com/ababic/fashion-size).
 
+`SizeTypeField` stores which size type a column is (`dress`, `adult-shoe`). Reading it returns a `SizeType`.
+
 `SizeUnitField` stores which size unit a column is (`uk-dress-size`). Reading it returns a `SizeUnit`.
 
 `SizeField` stores the size token (`10`, `7.5`, `DD`, `MD`). Pass `size_unit_field` pointing at a `SizeUnitField` on this model or a related one (`"size_unit"`, `"attribute.size_unit"`). Reading it returns a `Size`; call `.convert()` on that value.
@@ -59,7 +61,20 @@ value.convert_to_locale(
 
 `FashionProductTypeField` stores a product-type slug (`shoes`). Reading it returns a `fashion_size.product_types.ProductType`, or `None` when the value is blank or not a known product type. `full_clean` rejects values that are not in `FashionProductType.values`. Its default form field is `FashionProductTypeFormField`, a select whose options always come from `FashionProductType`. Passed `choices` are ignored so the list cannot go stale against `fashion-size`.
 
-`SizeTypeSlug` is a Django choices enum with the same values as `fashion_size.size_types.SizeTypeSlug`.
+`SizeTypeSlug` is a Django choices enum with the same values as `fashion_size.size_types.SizeTypeSlug`. `SizeTypeField` stores one of those slugs and returns the `SizeType`. A blank column reads as `None`. Use it when the attribute is the size type, and each value keeps its own source unit and raw token:
+
+```python
+class Attribute(models.Model):
+    size_type = SizeTypeField()
+
+
+class AttributeValue(models.Model):
+    attribute = models.ForeignKey(Attribute, on_delete=models.CASCADE)
+    size_unit = SizeUnitField()
+    size = SizeField(size_unit_field="size_unit")
+```
+
+`attribute.size_type` is a `SizeType` (`dress`). `attribute_value.size` is a `Size` in whatever unit was supplied (`eu-dress-size` / `38`). Convert from that pair when a UK token is needed; the stored columns stay the source unit and the raw token.
 
 Importing this package registers Django's `get_language` as the `fashion-size` display language and makes `Size.display()` use it. English lengths render as `32"` and `81cm`; other languages render as `32 in` and `81 cm`. `UK 10` and `DD` stay the same in every language. Cup size also accepts sports-bra alpha labels (`XXS`, `XS`, `S`, `MD`, `LG`, `XL`, `XXL`). They convert as the same token in every region, and the autocomplete lists them after the letter chart. `Size.display()` shows `MD` and `LG` as `M` and `L`; the stored token stays `MD` and `LG`. Brand charts ship with `fashion-size`; pass `brand_name` and `product_type` on `Size.convert` / `Size.convert_to_locale`. The model fields do not need this package in `INSTALLED_APPS`.
 

@@ -80,6 +80,22 @@ class LinkedNameForm(forms.Form):
     gender = forms.CharField(required=False)
 
 
+def test_waist_size_keeps_the_region_select() -> None:
+    form = ItemForm(
+        initial={
+            "size_unit": "uk-waist-size",
+            "age_group": "adult",
+            "gender": "male",
+            "size": "30",
+        }
+    )
+    measurement = _config(form)["units"]["uk-waist-size"]["measurement"]
+    assert measurement["length"] is False
+    assert measurement["storage_format"] == "uk"
+    assert measurement["format_side"] == "left"
+    assert [item["value"] for item in measurement["formats"]] == ["uk", "eu", "us", "au"]
+
+
 def test_widget_is_an_autocomplete_not_a_size_select() -> None:
     form = ItemForm(
         initial={

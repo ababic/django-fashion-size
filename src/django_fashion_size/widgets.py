@@ -67,8 +67,18 @@ def _entry_formats(size_type: SizeType) -> tuple[tuple[str, str], ...]:
     return _CHART_FORMATS
 
 
+def _is_length_size(size_unit: SizeUnit) -> bool:
+    """True for centimetre and inch size types.
+
+    Waist, chest, and band units can carry ``length_unit`` so ``fashion-size``
+    can display them like a length. The form still chooses a region, because
+    those charts do not convert like inches and centimetres.
+    """
+    return size_unit.size_type.family == SizeFamily.LENGTH
+
+
 def _storage_format(size_unit: SizeUnit) -> str:
-    if size_unit.length_unit:
+    if _is_length_size(size_unit) and size_unit.length_unit:
         return size_unit.length_unit
     return size_unit.locale.value
 
@@ -532,9 +542,9 @@ def size_value_config(
                 "label": size_unit.size_type.label,
                 "storage_format": _storage_format(size_unit),
                 "storage_measurement": size_unit.slug,
-                "format_side": "right" if size_unit.length_unit else "left",
+                "format_side": "right" if _is_length_size(size_unit) else "left",
                 "formats": [{"value": value, "label": format_label} for value, format_label in formats],
-                "length": bool(size_unit.length_unit),
+                "length": _is_length_size(size_unit),
             },
             "context": {
                 "demographic_label": _demographic_label(age_group, gender),

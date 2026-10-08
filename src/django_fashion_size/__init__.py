@@ -11,6 +11,8 @@ The size types and charts live in ``fashion-size``.
 Importing this package registers Django's active language with
 ``fashion-size`` and points ``Size.display`` at that language. Lengths then
 render as ``32"`` / ``81cm`` in English and ``32 in`` / ``81 cm`` otherwise.
+``fashion-size`` uses that same formatting for UK, US, and AU waist and chest
+sizes, and for UK, US, and EU band sizes.
 """
 
 from django.utils.translation import get_language

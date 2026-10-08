@@ -54,7 +54,7 @@ wheels = [
 
 [[package]]
 name = "django-fashion-size"
-version = "0.6.0"
+version = "0.7.0"
 source = { editable = "." }
 dependencies = [
     { name = "django" },
@@ -73,7 +73,7 @@ testing = [
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = ">=6.0,<7" },
-    { name = "fashion-size", specifier = ">=2026.10.6" },
+    { name = "fashion-size", specifier = ">=2026.10.8" },
     { name = "pytest", marker = "extra == 'testing'", specifier = ">=8" },
     { name = "ruff", marker = "extra == 'development'", specifier = ">=0.11,<1" },
     { name = "tox", marker = "extra == 'testing'", specifier = ">=4" },
@@ -82,11 +82,11 @@ provides-extras = ["testing", "development"]
 
 [[package]]
 name = "fashion-size"
-version = "2026.10.6"
+version = "2026.10.8"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/3c/c0/ec2c289e98e45ac3a8564b70d02f3bf5c14a602cd440bb5245fbdae005b4/fashion_size-2026.10.6.tar.gz", hash = "sha256:e38012b651dc19d625932040262acb0512587ac6dcd4fd28339cfcc3ab4205f5", size = 32369, upload-time = "2026-10-06T13:40:35.037Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/16/b6/2d5ebc2df813f2ebe0826c264411d3c17b0836025cbe003a51b3a736cf66/fashion_size-2026.10.8.tar.gz", hash = "sha256:1f78143e546e4137e44338086b4eba4d0b14d90a279472937381e2beab587d56", size = 34622, upload-time = "2026-10-08T10:00:36.679Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/22/d5/35db4593a7a1d62eb167117d0954e87423867604d3d4c487258af2d740b3/fashion_size-2026.10.6-py3-none-any.whl", hash = "sha256:1e032bac23f7214a591671de6a447bde242709cd6b00f9d87f28f5d119d4e239", size = 37342, upload-time = "2026-10-06T13:40:33.741Z" },
+    { url = "https://files.pythonhosted.org/packages/34/b8/234f096ab1bc774573acd48b621b7232ae4724aa06a206db336154578661/fashion_size-2026.10.8-py3-none-any.whl", hash = "sha256:9c2875f170db33e38830165f5ada56c63dee50fa3db9429380b67553f10f0e11", size = 39013, upload-time = "2026-10-08T10:00:35.33Z" },
 ]
 
 [[package]]

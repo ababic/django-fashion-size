@@ -220,6 +220,66 @@ def test_charfield_reads_brand_and_product_type_from_linked_fields() -> None:
     assert config["charts"]["adult-shoe"]["origin"] == "brand"
 
 
+def _cup_form(**data: str) -> ItemForm:
+    payload = {
+        "size_unit": "uk-cup-size",
+        "age_group": "adult",
+        "gender": "female",
+        "size__active": "1",
+        "size__format": "uk",
+        "size__unit": "uk-cup-size",
+        "size__age_group": "adult",
+        "size__gender": "female",
+    }
+    payload.update(data)
+    return ItemForm(data=payload)
+
+
+def test_cup_suggestions_append_alpha_labels_after_the_letter_chart() -> None:
+    form = ItemForm(
+        initial={
+            "size_unit": "uk-cup-size",
+            "age_group": "adult",
+            "gender": "female",
+        }
+    )
+    config = _config(form)
+    uk = config["units"]["uk-cup-size"]["values"]["uk"]
+    labels = [item["input"] for item in uk]
+    assert labels.index("K") < labels.index("XXS")
+    assert labels[-7:] == ["XXS", "XS", "S", "MD", "LG", "XL", "XXL"]
+    medium = next(item for item in uk if item["input"] == "MD")
+    assert medium["stored"] == "MD"
+    assert "M" not in labels
+    assert "L" not in labels
+    chart_tokens = {cell for row in config["charts"]["cup-size"]["rows"] for cell in row.values()}
+    assert "XXS" not in chart_tokens
+    assert "MD" not in chart_tokens
+    eu = config["units"]["uk-cup-size"]["values"]["eu"]
+    eu_medium = next(item for item in eu if item["input"] == "M")
+    assert eu_medium["stored"] == "J"
+    alpha = next(item for item in eu if item["input"] == "MD")
+    assert alpha["stored"] == "MD"
+
+
+def test_alpha_cup_alias_posts_the_canonical_token() -> None:
+    form = _cup_form(size__entry="medium")
+    assert form.is_valid(), form.errors
+    assert form.cleaned_data["size"] == "MD"
+    large = _cup_form(size__entry="large", size__format="eu")
+    assert large.is_valid(), large.errors
+    assert large.cleaned_data["size"] == "LG"
+
+
+def test_single_letter_m_stays_a_cup_letter() -> None:
+    uk = _cup_form(size__entry="M")
+    assert not uk.is_valid()
+    assert "not on the chart" in uk.errors["size"][0]
+    eu = _cup_form(size__entry="M", size__format="eu")
+    assert eu.is_valid(), eu.errors
+    assert eu.cleaned_data["size"] == "J"
+
+
 def test_model_field_uses_the_autocomplete_widget() -> None:
     field = Item._meta.get_field("size").formfield()
     assert isinstance(field, SizeFormField)
@@ -234,5 +294,8 @@ if __name__ == "__main__":
     test_brand_chart_is_embedded()
     test_charfield_accepts_a_size_unit_brand_name_and_product_type_name()
     test_charfield_reads_brand_and_product_type_from_linked_fields()
+    test_cup_suggestions_append_alpha_labels_after_the_letter_chart()
+    test_alpha_cup_alias_posts_the_canonical_token()
+    test_single_letter_m_stays_a_cup_letter()
     test_model_field_uses_the_autocomplete_widget()
     print("ok")

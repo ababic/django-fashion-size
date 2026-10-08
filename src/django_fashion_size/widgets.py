@@ -20,8 +20,9 @@ from fashion_size.brands import BrandName, resolve_brand_name
 from fashion_size.charts import chart_for
 from fashion_size.demographics import AgeGroup, Demographic, Gender
 from fashion_size.product_types import ProductType, resolve_product_type
-from fashion_size.scales import default_scale
+from fashion_size.scales import cup_sort_key, default_scale
 from fashion_size.types import (
+    CUP_ALPHA_ORDER,
     FRENCH_BAND_OFFSET,
     SIZE_UNITS,
     ConversionScale,
@@ -37,6 +38,7 @@ from fashion_size.types import (
     UnknownSizeError,
     format_age_gender,
     format_raw,
+    is_cup_alpha_token,
     normalize_raw,
     parse_size_unit_slug,
     size_from_attribute_option,
@@ -227,17 +229,23 @@ def _suggestion_values(
             pairs.append((converted, parsed.raw))
     else:
         pairs = list(zip(scale.raw_values(entry), scale.raw_values(storage), strict=True))
+        # Alpha labels are valid cup sizes and are not rows on the letter chart.
+        if scale.size_type.family == SizeFamily.CUP_SIZE:
+            pairs.extend((token, token) for token in CUP_ALPHA_ORDER)
+    cup = scale.size_type.family == SizeFamily.CUP_SIZE
     for entry_raw, stored_raw in pairs:
         label = _token(entry_raw)
         if label in seen:
             continue
         seen.add(label)
         values.append({"input": label, "stored": _token(stored_raw)})
-    values.sort(key=_suggestion_sort)
+    values.sort(key=lambda item: _suggestion_sort(item, cup=cup))
     return values
 
 
-def _suggestion_sort(item: dict[str, str]) -> tuple[int, float, str]:
+def _suggestion_sort(item: dict[str, str], *, cup: bool = False) -> tuple[int, int] | tuple[int, float, str]:
+    if cup:
+        return cup_sort_key(item["input"])
     text = item["input"]
     if _is_number(text):
         return (0, float(text), text)
@@ -419,10 +427,12 @@ def _convert_entry(
             if format_name == _storage_format(storage):
                 return stored_size_token(entered)
             raise ValidationError(_NOT_ON_CHART)
-        try:
-            scale.row_for(entered.raw, entered.size_unit)
-        except UnknownSizeError as exc:
-            raise ValidationError(_NOT_ON_CHART) from exc
+        # Sports-bra alpha labels convert identically and are not chart rows.
+        if not (size_type.family == SizeFamily.CUP_SIZE and is_cup_alpha_token(str(entered.raw))):
+            try:
+                scale.row_for(entered.raw, entered.size_unit)
+            except UnknownSizeError as exc:
+                raise ValidationError(_NOT_ON_CHART) from exc
     try:
         converted = entered.convert(
             storage,

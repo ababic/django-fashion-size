@@ -15,6 +15,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # A tag push is not a branch push, so the trigger cannot filter by branch.
+      # Publish only when the tagged commit is already on main or a release-* branch.
+      - name: Require main or a release branch
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin '+refs/heads/main:refs/remotes/origin/main'
+          if ! git fetch --no-tags origin '+refs/heads/release-*:refs/remotes/origin/release-*'; then
+            echo "No release-* branches on origin."
+          fi
+          if git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main; then
+            echo "Publishing ${GITHUB_REF_NAME}: ${GITHUB_SHA} is on main."
+            exit 0
+          fi
+          branches="$(git for-each-ref --format='%(refname:short)' 'refs/remotes/origin/release-*' --contains "$GITHUB_SHA" || true)"
+          if [ -n "$branches" ]; then
+            echo "Publishing ${GITHUB_REF_NAME}: ${GITHUB_SHA} is on ${branches}."
+            exit 0
+          fi
+          echo "Not publishing ${GITHUB_REF_NAME}: ${GITHUB_SHA} is not on main or a release-* branch."
+          exit 1
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"

@@ -33,7 +33,21 @@ function bundlesFor(unit, charts) {
   return bundles;
 }
 
-function BoundSize({ mount, input, config, unitSlug }) {
+function isCustomToken(customValues, value) {
+  const needle = String(value || "").trim().toLowerCase();
+  if (!needle) {
+    return false;
+  }
+  return (customValues || []).some(
+    (item) => String(item).trim().toLowerCase() === needle
+  );
+}
+
+function selectHasCustom(select) {
+  return [...select.options].some((option) => option.value === "custom");
+}
+
+function BoundSize({ mount, input, config, unitSlug, customValues, customLabel }) {
   const unit = config.units?.[unitSlug];
   const onEntry = useCallback(
     (entry) => {
@@ -63,6 +77,8 @@ function BoundSize({ mount, input, config, unitSlug }) {
       storedValue={input.value}
       disabled={Boolean(config.disabled || input.disabled)}
       ariaLabel={config.label || unit.measurement.label}
+      customValues={customValues}
+      customLabel={customLabel}
       onChange={onChange}
       onEntry={onEntry}
     />
@@ -76,10 +92,36 @@ function renderMount(mount) {
   if (!config || !input || !rootNode) {
     return;
   }
-  const unitNow = config.units?.[config.initialUnit] || null;
+  const form = input.form;
+  const unitInput =
+    config.sizeUnitField && form
+      ? form.elements.namedItem(config.sizeUnitField)
+      : null;
+  const linkedSelect = unitInput && unitInput.tagName === "SELECT" ? unitInput : null;
+  const customValues = Array.isArray(config.customValues) ? config.customValues : [];
+  // Custom is an option on the size-unit select when that control is a select.
+  // Otherwise the region select inside the field grows a Custom option.
+  const formatCustomValues = linkedSelect ? [] : customValues;
+  if (
+    linkedSelect &&
+    customValues.length &&
+    selectHasCustom(linkedSelect) &&
+    (!linkedSelect.value || linkedSelect.value === "custom") &&
+    isCustomToken(customValues, input.value)
+  ) {
+    linkedSelect.value = "custom";
+  }
+  const currentUnit = () => {
+    if (unitInput && "value" in unitInput && unitInput.value) {
+      return unitInput.value;
+    }
+    return config.initialUnit || "";
+  };
+  const startingUnit = currentUnit();
+  const unitNow = config.units?.[startingUnit] || null;
   writeField(mount, "entry", input.value);
   writeField(mount, "format", unitNow?.measurement?.storage_format || "");
-  writeField(mount, "unit", config.initialUnit || "");
+  writeField(mount, "unit", startingUnit || "");
   writeField(mount, "active", "1");
   writeField(mount, "age-group", config.ageGroup || "");
   writeField(mount, "gender", config.gender || "");
@@ -91,19 +133,27 @@ function renderMount(mount) {
     root = createRoot(rootNode);
     roots.set(rootNode, root);
   }
-  const form = input.form;
-  const unitInput =
-    config.sizeUnitField && form
-      ? form.elements.namedItem(config.sizeUnitField)
-      : null;
-  const currentUnit = () => {
-    if (unitInput && "value" in unitInput && unitInput.value) {
-      return unitInput.value;
-    }
-    return config.initialUnit || "";
+  // Custom text is not a size. Leaving Custom keeps it here and clears the
+  // field; coming back puts that same text into the input.
+  let activeSlug = startingUnit;
+  let customStash = activeSlug === "custom" ? input.value : "";
+  let unitStash = {
+    slug: activeSlug === "custom" ? "" : activeSlug,
+    value: activeSlug === "custom" ? "" : input.value,
   };
   const draw = () => {
-    const unitSlug = currentUnit();
+    let unitSlug = currentUnit();
+    if (linkedSelect && customValues.length && unitSlug !== activeSlug) {
+      if (activeSlug === "custom") {
+        customStash = input.value;
+        input.value = unitStash.slug === unitSlug ? unitStash.value : "";
+      } else if (unitSlug === "custom") {
+        unitStash = { slug: activeSlug, value: input.value };
+        input.value = customStash;
+      }
+      activeSlug = unitSlug;
+      unitSlug = activeSlug;
+    }
     const unit = config.units?.[unitSlug];
     if (!unit) {
       mount.classList.remove("is-ready");
@@ -111,6 +161,9 @@ function renderMount(mount) {
       root.render(null);
       return;
     }
+    writeField(mount, "entry", input.value);
+    writeField(mount, "format", unit.measurement?.storage_format || "");
+    writeField(mount, "unit", unitSlug);
     mount.classList.add("is-ready");
     input.hidden = true;
     root.render(
@@ -120,6 +173,8 @@ function renderMount(mount) {
         input={input}
         config={config}
         unitSlug={unitSlug}
+        customValues={formatCustomValues}
+        customLabel={config.customLabel || "Custom"}
       />
     );
   };

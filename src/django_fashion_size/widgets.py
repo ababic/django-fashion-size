@@ -16,6 +16,7 @@ from django import forms
 from django.core.exceptions import ValidationError
 from django.utils.html import format_html, json_script
 from django.utils.safestring import mark_safe
+from django.utils.translation import gettext_lazy as _
 from fashion_size.brands import BrandName, resolve_brand_name
 from fashion_size.charts import chart_for
 from fashion_size.demographics import AgeGroup, Demographic, Gender
@@ -46,17 +47,52 @@ from fashion_size.types import (
     size_unit_for_locale,
 )
 
-from django_fashion_size.model_fields import resolve_size_unit, stored_size_token
+from django_fashion_size.model_fields import (
+    CUSTOM_SIZE_UNIT_SLUG,
+    resolve_size_unit,
+    stored_size_token,
+)
 
 _CHART_FORMATS = (("uk", "UK"), ("eu", "EU"), ("us", "US"), ("au", "AU"))
 _LENGTH_FORMATS = (("in", "in"), ("cm", "cm"))
 _NOT_ON_CHART = "That size is not on the chart."
 _LENGTH_RANGE = "Enter a length from 5 to 150 inches."
+_CUSTOM_SIZE = "Choose a custom size."
+_CUSTOM_LABEL = _("Custom")
 
 
 class _InvalidEntry:
-    def __init__(self, message: str) -> None:
+    def __init__(self, message: str, text: str = "") -> None:
         self.message = message
+        self.text = text
+
+
+def _normalize_custom_values(values: list[str] | None) -> tuple[str, ...]:
+    """Strip, drop blanks, and keep the first spelling of each custom size."""
+    if not values:
+        return ()
+    seen: set[str] = set()
+    cleaned: list[str] = []
+    for value in values:
+        text = str(value).strip()
+        key = text.casefold()
+        if not text or key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(text)
+    return tuple(cleaned)
+
+
+def _match_custom(text: str, custom_values: tuple[str, ...]) -> str | None:
+    """Canonical custom size, ``""`` when ``text`` is blank, or ``None`` when unknown."""
+    needle = text.strip()
+    if not needle:
+        return ""
+    folded = needle.casefold()
+    for value in custom_values:
+        if value.casefold() == folded:
+            return value
+    return None
 
 
 def _entry_formats(size_type: SizeType) -> tuple[tuple[str, str], ...]:
@@ -455,19 +491,37 @@ def _convert_entry(
     return stored_size_token(converted.size)
 
 
-def posted_size_token(data: Any, name: str) -> str | _InvalidEntry:
+def _is_custom_submission(data: Any, name: str) -> bool:
+    unit_slug = str(data.get(f"{name}__unit") or "").strip().lower()
+    format_name = str(data.get(f"{name}__format") or "").strip().lower()
+    return unit_slug == CUSTOM_SIZE_UNIT_SLUG or format_name == CUSTOM_SIZE_UNIT_SLUG
+
+
+def posted_size_token(
+    data: Any,
+    name: str,
+    custom_values: tuple[str, ...] = (),
+) -> str | _InvalidEntry:
     """Storage token from the autocomplete, or the plain input when script is off."""
     if str(data.get(f"{name}__active") or "") != "1":
         value = data.get(name)
         return "" if value is None else str(value)
     entry = data.get(f"{name}__entry")
-    if entry is None or str(entry).strip() == "":
+    text = "" if entry is None else str(entry).strip()
+    if text == "":
         return ""
+    if _is_custom_submission(data, name):
+        if not custom_values:
+            return _InvalidEntry(_CUSTOM_SIZE, text)
+        matched = _match_custom(text, custom_values)
+        if matched is None:
+            return _InvalidEntry(_CUSTOM_SIZE, text)
+        return matched
     try:
         return _convert_entry(
             unit_slug=str(data.get(f"{name}__unit") or "").strip().lower(),
             format_name=str(data.get(f"{name}__format") or "").strip().lower(),
-            text=str(entry).strip(),
+            text=text,
             age_group=str(data.get(f"{name}__age_group") or "").strip().lower(),
             gender=str(data.get(f"{name}__gender") or "").strip().lower(),
             brand_name=str(data.get(f"{name}__brand") or "").strip(),
@@ -475,7 +529,22 @@ def posted_size_token(data: Any, name: str) -> str | _InvalidEntry:
         )
     except ValidationError as exc:
         message = exc.messages[0] if exc.messages else _NOT_ON_CHART
-        return _InvalidEntry(message)
+        return _InvalidEntry(message, text)
+
+
+def _posted_size_unit(data: Any, name: str, fallback: SizeUnit | None) -> SizeUnit | None:
+    """Unit the posted token is stored in. Custom sizes have no unit."""
+    if str(data.get(f"{name}__active") or "") != "1":
+        return fallback
+    if _is_custom_submission(data, name):
+        return None
+    unit_slug = str(data.get(f"{name}__unit") or "").strip().lower()
+    if not unit_slug:
+        return fallback
+    try:
+        return parse_size_unit_slug(unit_slug)
+    except ValueError:
+        return fallback
 
 
 def _linked_field_name(form: forms.BaseForm, name: str) -> str:
@@ -555,6 +624,34 @@ def size_value_config(
             "values": values,
             "choices": unit_choices or [],
         }
+    custom_values = widget.custom_values
+    if custom_values:
+        # A synthetic unit. The size-unit select's Custom option points here.
+        # The autocomplete is initialised from this bundle; nothing converts.
+        payload[CUSTOM_SIZE_UNIT_SLUG] = {
+            "measurement": {
+                "kind": CUSTOM_SIZE_UNIT_SLUG,
+                "label": _CUSTOM_LABEL,
+                "storage_format": CUSTOM_SIZE_UNIT_SLUG,
+                "storage_measurement": CUSTOM_SIZE_UNIT_SLUG,
+                "format_side": "left",
+                "formats": [{"value": CUSTOM_SIZE_UNIT_SLUG, "label": _CUSTOM_LABEL}],
+                "length": False,
+                "custom": True,
+            },
+            "context": {
+                "demographic_label": _demographic_label(age_group, gender),
+                "product_type_name": _product_label(product_type) if product_type else "",
+                "product_type_group_name": "",
+            },
+            "chartKey": "",
+            "values": {
+                CUSTOM_SIZE_UNIT_SLUG: [
+                    {"input": value, "stored": value} for value in custom_values
+                ]
+            },
+            "choices": list(custom_values),
+        }
     return {
         "initialUnit": current,
         "sizeUnitField": form.add_prefix(size_unit_field) if on_form else "",
@@ -565,6 +662,8 @@ def size_value_config(
         "brand": brand,
         "productType": product_type,
         "label": label,
+        "customValues": list(custom_values),
+        "customLabel": _CUSTOM_LABEL,
         "units": payload,
         "charts": charts,
     }
@@ -583,6 +682,7 @@ class SizeValueWidget(forms.Widget):
         brand_name: str | None = None,
         product_type_name: str | None = None,
         choices: list[str] | None = None,
+        custom_values: list[str] | None = None,
     ) -> None:
         self.age_group = age_group
         self.gender = gender
@@ -592,6 +692,7 @@ class SizeValueWidget(forms.Widget):
         self.brand_name = brand_name
         self.product_type_name = product_type_name
         self.choices = choices
+        self.custom_values = _normalize_custom_values(custom_values)
         self.config: dict[str, Any] = {}
         super().__init__(attrs)
 
@@ -599,8 +700,18 @@ class SizeValueWidget(forms.Widget):
         css = {"all": ["django_fashion_size/size_value_field.css"]}
         js = ["django_fashion_size/size_value_field.js"]
 
-    def value_from_datadict(self, data: Any, files: Any, name: str) -> str | _InvalidEntry:
-        return posted_size_token(data, name)
+    def value_from_datadict(
+        self, data: Any, files: Any, name: str
+    ) -> tuple[str, SizeUnit | None] | _InvalidEntry:
+        parsed = posted_size_token(data, name, self.custom_values)
+        if isinstance(parsed, _InvalidEntry):
+            return parsed
+        if str(data.get(f"{name}__active") or "") != "1":
+            matched = _match_custom(parsed, self.custom_values) if parsed else ""
+            if parsed and matched:
+                return (matched, None)
+            return (parsed, self.size_unit)
+        return (parsed, _posted_size_unit(data, name, self.size_unit))
 
     def render(self, name: str, value: Any, attrs: dict[str, Any] | None = None, renderer: Any = None) -> str:
         attrs = self.build_attrs(self.attrs, attrs)
@@ -608,7 +719,12 @@ class SizeValueWidget(forms.Widget):
         config = dict(self.config)
         config["disabled"] = bool(attrs.get("disabled"))
         config.setdefault("label", "")
-        token = "" if value in (None, "") else str(value)
+        if isinstance(value, tuple) and value:
+            value = value[0]
+        if isinstance(value, _InvalidEntry):
+            token = value.text
+        else:
+            token = "" if value in (None, "") else str(value)
         input_attrs = {key: item for key, item in attrs.items() if key != "required"}
         input_attrs["id"] = input_id
         input_attrs["autocomplete"] = "off"
@@ -647,7 +763,14 @@ class SizeValueWidget(forms.Widget):
 
 
 class SizeFormField(forms.CharField):
-    """Char field whose widget is the size autocomplete."""
+    """Char field whose widget is the size autocomplete.
+
+    ``clean`` returns ``(token, size_unit)``. ``size_unit`` is the unit that
+    token is stored in. It is ``None`` when the token is one of
+    ``custom_values`` — those values are not sizes and do not convert.
+    Pass ``custom_values`` to add a Custom option to the linked size-unit
+    select (or to the region select when the unit is fixed on this field).
+    """
 
     def __init__(
         self,
@@ -660,6 +783,7 @@ class SizeFormField(forms.CharField):
         product_type_name_field: str = "product_type",
         age_group: str | None = None,
         gender: str | None = None,
+        custom_values: list[str] | None = None,
         **kwargs: Any,
     ) -> None:
         self.size_unit_field = size_unit_field
@@ -677,12 +801,45 @@ class SizeFormField(forms.CharField):
                 widget.age_group = age_group
             if gender is not None:
                 widget.gender = gender
+            if custom_values is not None:
+                widget.custom_values = _normalize_custom_values(custom_values)
         super().__init__(*args, **kwargs)
 
-    def to_python(self, value: Any) -> str:
+    def _token_and_unit(self, value: Any) -> tuple[str, SizeUnit | None]:
         if isinstance(value, _InvalidEntry):
             raise ValidationError(value.message)
-        return super().to_python(value)
+        if isinstance(value, tuple) and len(value) == 2:
+            token, unit = value
+            if isinstance(token, _InvalidEntry):
+                raise ValidationError(token.message)
+            if unit is not None and not isinstance(unit, SizeUnit):
+                unit = None
+            return super().to_python(token), unit
+        return super().to_python(value), None
+
+    def to_python(self, value: Any) -> tuple[str, SizeUnit | None]:
+        return self._token_and_unit(value)
+
+    def validate(self, value: Any) -> None:
+        token = value[0] if isinstance(value, tuple) else value
+        super().validate(token)
+
+    def run_validators(self, value: Any) -> None:
+        token = value[0] if isinstance(value, tuple) else value
+        super().run_validators(token)
+
+    def has_changed(self, initial: Any, data: Any) -> bool:
+        if self.disabled:
+            return False
+        try:
+            cleaned = self.to_python(data)
+        except ValidationError:
+            return True
+        token = cleaned[0] if isinstance(cleaned, tuple) else cleaned
+        if isinstance(initial, tuple):
+            initial = initial[0]
+        initial_value = "" if initial is None else initial
+        return initial_value != token
 
     def get_bound_field(self, form: forms.BaseForm, field_name: str) -> forms.BoundField:
         return SizeBoundField(form, self, field_name)

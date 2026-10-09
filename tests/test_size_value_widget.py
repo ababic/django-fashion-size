@@ -19,9 +19,15 @@ if not settings.configured:
 
 from django.db import models
 
-from fashion_size.types import CM_CHEST_SIZE, Size, UK_ADULT_SHOE_SIZE
+from fashion_size.types import CM_CHEST_SIZE, SIZE_UNIT_BY_SLUG, Size, UK_ADULT_SHOE_SIZE
 
-from django_fashion_size import SizeField, SizeFormField, SizeValueWidget
+from django_fashion_size import (
+    CUSTOM_SIZE_UNIT,
+    SizeField,
+    SizeFormField,
+    SizeUnitField,
+    SizeValueWidget,
+)
 from django_fashion_size.model_fields import stored_size_token
 
 
@@ -133,7 +139,7 @@ def test_typed_eu_size_posts_the_uk_token() -> None:
         }
     )
     assert form.is_valid(), form.errors
-    assert form.cleaned_data["size"] == "10"
+    assert form.cleaned_data["size"] == ("10", SIZE_UNIT_BY_SLUG["uk-dress-size"])
 
 
 def test_off_chart_size_is_rejected() -> None:
@@ -165,7 +171,7 @@ def test_inches_posted_into_a_centimetre_field() -> None:
         }
     )
     assert form.is_valid(), form.errors
-    assert form.cleaned_data["size"] == "81.28"
+    assert form.cleaned_data["size"] == ("81.28", CM_CHEST_SIZE)
     assert stored_size_token(Size.from_raw("81.28", CM_CHEST_SIZE)) == "81.28"
 
 
@@ -213,7 +219,7 @@ def test_charfield_accepts_a_size_unit_brand_name_and_product_type_name() -> Non
         }
     )
     assert posted.is_valid(), posted.errors
-    assert posted.cleaned_data["value"] == "5"
+    assert posted.cleaned_data["value"] == ("5", UK_ADULT_SHOE_SIZE)
 
 
 def test_charfield_reads_brand_and_product_type_from_linked_fields() -> None:
@@ -281,10 +287,10 @@ def test_cup_suggestions_append_alpha_labels_after_the_letter_chart() -> None:
 def test_alpha_cup_alias_posts_the_canonical_token() -> None:
     form = _cup_form(size__entry="medium")
     assert form.is_valid(), form.errors
-    assert form.cleaned_data["size"] == "MD"
+    assert form.cleaned_data["size"] == ("MD", SIZE_UNIT_BY_SLUG["uk-cup-size"])
     large = _cup_form(size__entry="large", size__format="eu")
     assert large.is_valid(), large.errors
-    assert large.cleaned_data["size"] == "LG"
+    assert large.cleaned_data["size"] == ("LG", SIZE_UNIT_BY_SLUG["uk-cup-size"])
 
 
 def test_single_letter_m_stays_a_cup_letter() -> None:
@@ -293,7 +299,116 @@ def test_single_letter_m_stays_a_cup_letter() -> None:
     assert "not on the chart" in uk.errors["size"][0]
     eu = _cup_form(size__entry="M", size__format="eu")
     assert eu.is_valid(), eu.errors
-    assert eu.cleaned_data["size"] == "J"
+    assert eu.cleaned_data["size"] == ("J", SIZE_UNIT_BY_SLUG["uk-cup-size"])
+
+
+class CustomSizeForm(forms.Form):
+    """Custom sizes are a size-unit option, and they do not convert."""
+
+    size_unit = SizeUnitField(allow_custom=True).formfield()
+    value = SizeFormField(
+        size_unit_field="size_unit",
+        custom_values=["One Size", "S/M", "S/M", "  "],
+        age_group="adult",
+        gender="female",
+    )
+
+
+class FixedUnitCustomForm(forms.Form):
+    """No size-unit field: Custom is a choice on the region select instead."""
+
+    value = SizeFormField(
+        size_unit=UK_ADULT_SHOE_SIZE,
+        custom_values=["One Size"],
+        age_group="adult",
+        gender="female",
+        brand_name="Dune London",
+        product_type_name="Shoes",
+    )
+
+
+def test_custom_values_are_in_the_widget_config() -> None:
+    form = CustomSizeForm()
+    config = _config(form, "value")
+    assert config["customValues"] == ["One Size", "S/M"]
+    assert config["customLabel"] == "Custom"
+    assert config["sizeUnitField"] == "size_unit"
+    custom = config["units"]["custom"]
+    assert custom["measurement"]["custom"] is True
+    assert custom["chartKey"] == ""
+    assert custom["values"]["custom"] == [
+        {"input": "One Size", "stored": "One Size"},
+        {"input": "S/M", "stored": "S/M"},
+    ]
+    assert "custom" not in config["charts"]
+
+
+def test_custom_size_cleans_to_a_token_with_no_unit() -> None:
+    form = CustomSizeForm(
+        data={
+            "size_unit": "custom",
+            "value__active": "1",
+            "value__entry": "s/m",
+            "value__format": "custom",
+            "value__unit": "custom",
+            "value__age_group": "adult",
+            "value__gender": "female",
+        }
+    )
+    assert form.is_valid(), form.errors
+    assert form.cleaned_data["size_unit"] is CUSTOM_SIZE_UNIT
+    assert form.cleaned_data["value"] == ("S/M", None)
+    html = str(CustomSizeForm()["size_unit"])
+    assert 'value="custom"' in html
+
+
+def test_unknown_custom_size_is_rejected() -> None:
+    form = CustomSizeForm(
+        data={
+            "size_unit": "custom",
+            "value__active": "1",
+            "value__entry": "Nope",
+            "value__format": "custom",
+            "value__unit": "custom",
+        }
+    )
+    assert not form.is_valid()
+    assert "custom size" in form.errors["value"][0]
+
+
+def test_fixed_unit_custom_value_has_no_size_unit() -> None:
+    form = FixedUnitCustomForm()
+    config = _config(form, "value")
+    assert config["sizeUnitField"] == ""
+    assert config["customValues"] == ["One Size"]
+    posted = FixedUnitCustomForm(
+        data={
+            "value__active": "1",
+            "value__entry": "one size",
+            "value__format": "custom",
+            "value__unit": "uk-adult-shoe-size",
+            "value__age_group": "adult",
+            "value__gender": "female",
+            "value__brand": "Dune London",
+            "value__product_type": "Shoes",
+        }
+    )
+    assert posted.is_valid(), posted.errors
+    assert posted.cleaned_data["value"] == ("One Size", None)
+    charted = FixedUnitCustomForm(
+        data={
+            "value__active": "1",
+            "value__entry": "38",
+            "value__format": "eu",
+            "value__unit": "uk-adult-shoe-size",
+            "value__age_group": "adult",
+            "value__gender": "female",
+            "value__brand": "Dune London",
+            "value__product_type": "Shoes",
+        }
+    )
+    assert charted.is_valid(), charted.errors
+    assert charted.cleaned_data["value"] == ("5", UK_ADULT_SHOE_SIZE)
 
 
 def test_model_field_uses_the_autocomplete_widget() -> None:
@@ -313,5 +428,9 @@ if __name__ == "__main__":
     test_cup_suggestions_append_alpha_labels_after_the_letter_chart()
     test_alpha_cup_alias_posts_the_canonical_token()
     test_single_letter_m_stays_a_cup_letter()
+    test_custom_values_are_in_the_widget_config()
+    test_custom_size_cleans_to_a_token_with_no_unit()
+    test_unknown_custom_size_is_rejected()
+    test_fixed_unit_custom_value_has_no_size_unit()
     test_model_field_uses_the_autocomplete_widget()
     print("ok")

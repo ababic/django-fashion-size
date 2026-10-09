@@ -21,6 +21,8 @@ from fashion_size.types import Size
 
 from django_fashion_size.kinds import FashionProductType, SizeTypeSlug, SizeUnitSlug
 from django_fashion_size.model_fields import (
+    CUSTOM_SIZE_UNIT,
+    CustomSizeUnit,
     FashionProductTypeField,
     FashionProductTypeFormField,
     SizeField,
@@ -41,6 +43,8 @@ Size.display = _display_for_active_language
 register_display_language(get_language)
 
 __all__ = [
+    "CUSTOM_SIZE_UNIT",
+    "CustomSizeUnit",
     "FashionProductType",
     "FashionProductTypeField",
     "FashionProductTypeFormField",

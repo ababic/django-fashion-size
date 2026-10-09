@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from decimal import InvalidOperation
-from typing import Any
+from typing import Any, Self
 
 from django import forms
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models.fields import BLANK_CHOICE_DASH
 from django.db.models.query_utils import DeferredAttribute
+from django.utils.translation import gettext_lazy as _
 from fashion_size.product_types import ProductType, resolve_product_type
 from fashion_size.types import (
     SIZE_TYPE_BY_SLUG,
@@ -22,6 +23,63 @@ from fashion_size.types import (
 )
 
 from django_fashion_size.kinds import FashionProductType, SizeTypeSlug, SizeUnitSlug
+
+# Stored slug for an opted-in Custom size unit. Not a fashion-size chart unit.
+CUSTOM_SIZE_UNIT_SLUG = "custom"
+
+
+class CustomSizeUnit:
+    """The ``custom`` size unit. It is stored as a slug and cannot convert.
+
+    ``SizeUnitField(allow_custom=True)`` reads that slug as this object.
+    The default field does not accept it. There is one shared instance, so
+    ``CustomSizeUnit() is CustomSizeUnit()``.
+    """
+
+    slug = CUSTOM_SIZE_UNIT_SLUG
+
+    def __new__(cls) -> Self:
+        instance = getattr(cls, "_instance", None)
+        if instance is None:
+            instance = super().__new__(cls)
+            cls._instance = instance
+        return instance
+
+    @property
+    def label(self) -> str:
+        return str(_("Custom"))
+
+    def can_convert_to(self, other: object) -> bool:
+        return False
+
+    def __getattr__(self, name: str) -> Any:
+        if name in {
+            "size_type",
+            "locale",
+            "length_unit",
+            "display_prefix",
+            "display_suffix",
+            "supports_brand_overrides",
+        }:
+            raise TypeError("Custom sizes cannot be converted.")
+        raise AttributeError(
+            f"{type(self).__name__!r} object has no attribute {name!r}"
+        )
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, CustomSizeUnit)
+
+    def __hash__(self) -> int:
+        return hash(self.slug)
+
+    def __str__(self) -> str:
+        return self.label
+
+    def __repr__(self) -> str:
+        return "CustomSizeUnit()"
+
+
+CUSTOM_SIZE_UNIT = CustomSizeUnit()
 
 
 def _translated_choices(
@@ -37,19 +95,29 @@ def _translated_choices(
 class SizeUnitFormField(forms.TypedChoiceField):
     """Choice field whose submitted value is a size-unit slug.
 
-    Options always come from ``SizeUnitSlug``. Their labels are
-    ``gettext_lazy`` strings. ``coerce`` is the model field's
-    ``to_python``, so a posted slug becomes a ``SizeUnit`` and the column
-    still stores the slug.
+    Options come from ``SizeUnitSlug``. Their labels are ``gettext_lazy``
+    strings. ``allow_custom`` adds a Custom option; ``SizeUnitField`` passes
+    its own ``allow_custom`` through, and that defaults to false. ``coerce``
+    is the model field's ``to_python``, so a posted slug becomes a
+    ``SizeUnit`` or ``CustomSizeUnit`` and the column still stores the slug.
     """
+
+    def __init__(self, *, allow_custom: bool = False, **kwargs: Any) -> None:
+        # Set before ``choices`` is assigned. The setter reads this flag.
+        self.allow_custom = allow_custom
+        super().__init__(**kwargs)
 
     def prepare_value(self, value: Any) -> Any:
         # The widget matches option values (slugs). ``coerce`` is ``to_python``,
         # which returns a ``SizeUnit``; its string form is the label, so a
         # saved value would render as an unselected blank.
+        if isinstance(value, CustomSizeUnit):
+            return value.slug
         if isinstance(value, SizeUnit):
             return value.slug
         prepared = super().prepare_value(value)
+        if isinstance(prepared, CustomSizeUnit):
+            return prepared.slug
         if isinstance(prepared, SizeUnit):
             return prepared.slug
         return prepared
@@ -58,7 +126,22 @@ class SizeUnitFormField(forms.TypedChoiceField):
     def choices(self, _value: Any) -> None:
         include_blank = not getattr(self, "required", True)
         choices = _translated_choices(SizeUnitSlug, include_blank=include_blank)
+        if getattr(self, "allow_custom", False):
+            choices = [*choices, (CUSTOM_SIZE_UNIT_SLUG, _("Custom"))]
         self._choices = self.widget.choices = choices
+
+
+def _size_unit_form_field(allow_custom: bool) -> type[SizeUnitFormField]:
+    """``SizeUnitFormField`` that is constructed with this ``allow_custom``."""
+
+    class _Field(SizeUnitFormField):
+        def __init__(self, **kwargs: Any) -> None:
+            kwargs["allow_custom"] = allow_custom
+            super().__init__(**kwargs)
+
+    _Field.__name__ = SizeUnitFormField.__name__
+    _Field.__qualname__ = SizeUnitFormField.__qualname__
+    return _Field
 
 
 class SizeUnitField(models.CharField):
@@ -68,14 +151,25 @@ class SizeUnitField(models.CharField):
     ``SizeUnit`` instance, or ``None`` when the attribute is not a convertible
     size. Assign a ``SizeUnit`` or its slug. The select uses ``SizeUnitSlug``
     labels.
+
+    ``allow_custom`` defaults to false. Set it to add a Custom option. That
+    option is stored as the slug ``custom`` and reads back as a
+    ``CustomSizeUnit``, which cannot be used in conversion.
     """
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    # Changing the flag does not change the column.
+    non_db_attrs = (*models.CharField.non_db_attrs, "allow_custom")
+
+    def __init__(self, *args: Any, allow_custom: bool = False, **kwargs: Any) -> None:
+        self.allow_custom = allow_custom
         kwargs.pop("choices", None)
         kwargs.setdefault("max_length", 40)
         kwargs.setdefault("blank", True)
         kwargs.setdefault("default", "")
-        kwargs["choices"] = list(SizeUnitSlug.choices)
+        choices = list(SizeUnitSlug.choices)
+        if allow_custom:
+            choices.append((CUSTOM_SIZE_UNIT_SLUG, _("Custom")))
+        kwargs["choices"] = choices
         super().__init__(*args, **kwargs)
 
     def deconstruct(self) -> tuple[str, str, list[Any], dict[str, Any]]:
@@ -87,7 +181,11 @@ class SizeUnitField(models.CharField):
         if kwargs.get("default") == "":
             del kwargs["default"]
         # Labels are translated at render time. Migrations do not store them.
-        if kwargs.get("choices") == list(SizeUnitSlug.choices):
+        expected = list(SizeUnitSlug.choices)
+        if self.allow_custom:
+            expected.append((CUSTOM_SIZE_UNIT_SLUG, _("Custom")))
+            kwargs["allow_custom"] = True
+        if kwargs.get("choices") == expected:
             del kwargs["choices"]
         return name, path, args, kwargs
 
@@ -96,10 +194,18 @@ class SizeUnitField(models.CharField):
     ) -> SizeUnit | None:
         return self.to_python(value)
 
-    def to_python(self, value: Any) -> SizeUnit | None:
+    def to_python(self, value: Any) -> SizeUnit | CustomSizeUnit | None:
+        if isinstance(value, CustomSizeUnit):
+            if not self.allow_custom:
+                raise ValidationError(f"Unknown size unit {CUSTOM_SIZE_UNIT_SLUG!r}.")
+            return CUSTOM_SIZE_UNIT
         if isinstance(value, SizeUnit) or value is None or value == "":
             return value or None
         slug = str(value).strip().lower()
+        if slug == CUSTOM_SIZE_UNIT_SLUG:
+            if not self.allow_custom:
+                raise ValidationError(f"Unknown size unit {value!r}.")
+            return CUSTOM_SIZE_UNIT
         try:
             return SIZE_UNIT_BY_SLUG[slug]
         except KeyError as exc:
@@ -117,7 +223,7 @@ class SizeUnitField(models.CharField):
         return "" if size_unit is None else size_unit.slug
 
     def _slug_for_validation(self, value: Any) -> str:
-        if isinstance(value, SizeUnit):
+        if isinstance(value, (SizeUnit, CustomSizeUnit)):
             return value.slug
         if value is None:
             return ""
@@ -131,8 +237,11 @@ class SizeUnitField(models.CharField):
 
     def formfield(self, **kwargs: Any) -> forms.Field:
         # Choice fields ignore ``form_class`` and fall back to TypedChoiceField
-        # unless ``choices_form_class`` is set.
-        kwargs["choices_form_class"] = SizeUnitFormField
+        # unless ``choices_form_class`` is set. Django also drops kwargs it does
+        # not know, so ``allow_custom`` is given to the form field's constructor
+        # rather than left in ``kwargs``.
+        allow_custom = kwargs.pop("allow_custom", self.allow_custom)
+        kwargs["choices_form_class"] = _size_unit_form_field(allow_custom)
         return super().formfield(**kwargs)
 
 
@@ -385,22 +494,28 @@ def _size_unit_field_path(path: str) -> str:
     return ".".join(parts)
 
 
-def resolve_size_unit(instance: models.Model, size_unit_field: str) -> SizeUnit | None:
+def resolve_size_unit(
+    instance: models.Model, size_unit_field: str
+) -> SizeUnit | CustomSizeUnit | None:
     """Follow ``size_unit_field`` from ``instance``, including relations.
 
     Each step is an attribute lookup (``host.size_unit``). An empty step, a
-    missing relation, or a blank size unit returns ``None``.
+    missing relation, or a blank size unit returns ``None``. The slug
+    ``custom`` is a ``CustomSizeUnit``.
     """
     current: Any = instance
     for part in size_unit_field.split("."):
         if current is None:
             return None
         current = getattr(current, part)
-    if isinstance(current, SizeUnit):
+    if isinstance(current, (SizeUnit, CustomSizeUnit)):
         return current
     if current is None or current == "":
         return None
-    return parse_size_unit_slug(str(current))
+    slug = str(current).strip().lower()
+    if slug == CUSTOM_SIZE_UNIT_SLUG:
+        return CUSTOM_SIZE_UNIT
+    return parse_size_unit_slug(slug)
 
 
 def _format_length_token(raw: Any) -> str:
@@ -444,6 +559,13 @@ class SizeDescriptor(DeferredAttribute):
         return Size.from_raw(raw, size_unit)
 
     def __set__(self, instance: models.Model, value: Any) -> None:
+        # ``SizeFormField`` cleans to ``(token, size_unit)``. The column stores the token.
+        if (
+            isinstance(value, tuple)
+            and len(value) == 2
+            and (value[1] is None or isinstance(value[1], SizeUnit))
+        ):
+            value = value[0]
         if isinstance(value, Size):
             size_unit = resolve_size_unit(instance, self.field.size_unit_field)
             if size_unit is not None and size_unit != value.size_unit:
@@ -523,6 +645,8 @@ class SizeField(models.CharField):
             model_instance.__dict__[self.attname] = ""
             return ""
         size_unit = resolve_size_unit(model_instance, self.size_unit_field)
+        if isinstance(size_unit, CustomSizeUnit):
+            raise ValidationError("Custom sizes cannot be converted.")
         if size_unit is None:
             raise ValidationError(f"Set {self.size_unit_field} before storing a size.")
         try:
@@ -537,6 +661,8 @@ class SizeField(models.CharField):
         if not token:
             return ""
         size_unit = resolve_size_unit(model_instance, self.size_unit_field)
+        if isinstance(size_unit, CustomSizeUnit):
+            raise ValidationError("Custom sizes cannot be converted.")
         if size_unit is None:
             raise ValidationError(f"Set {self.size_unit_field} before storing a size.")
         try:

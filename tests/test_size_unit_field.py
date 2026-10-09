@@ -19,9 +19,15 @@ if not settings.configured:
 from django.core.exceptions import ValidationError
 from django.db import connection, models
 from django.utils.functional import Promise
-from fashion_size.types import SIZE_UNIT_BY_SLUG, SizeUnit, size_unit_choices
+from fashion_size.types import SIZE_UNIT_BY_SLUG, Size, SizeUnit, size_unit_choices
 
-from django_fashion_size import SizeUnitField, SizeUnitFormField, SizeUnitSlug
+from django_fashion_size import (
+    CUSTOM_SIZE_UNIT,
+    CustomSizeUnit,
+    SizeUnitField,
+    SizeUnitFormField,
+    SizeUnitSlug,
+)
 
 
 class Garment(models.Model):
@@ -83,6 +89,74 @@ def test_clean_returns_a_size_unit() -> None:
         assert "dress" in str(exc)
     else:
         raise AssertionError("expected ValidationError")
+
+
+def test_custom_is_off_unless_the_field_opts_in() -> None:
+    field = SizeUnitField()
+    assert field.allow_custom is False
+    garment = Garment()
+    try:
+        field.clean("custom", garment)
+    except ValidationError as exc:
+        assert "custom" in str(exc)
+    else:
+        raise AssertionError("expected ValidationError")
+    form_field = field.formfield()
+    assert form_field.allow_custom is False
+    assert "custom" not in [value for value, _label in form_field.choices if value]
+    _name, path, _args, kwargs = field.deconstruct()
+    assert path.endswith("SizeUnitField")
+    assert "allow_custom" not in kwargs
+    assert "choices" not in kwargs
+
+
+class CustomGarment(models.Model):
+    size_unit = SizeUnitField(allow_custom=True)
+
+    class Meta:
+        app_label = "django_fashion_size"
+
+
+def test_allow_custom_stores_custom_and_returns_custom_size_unit() -> None:
+    field = CustomGarment._meta.get_field("size_unit")
+    assert field.allow_custom is True
+    garment = CustomGarment()
+    cleaned = field.clean("custom", garment)
+    assert cleaned is CUSTOM_SIZE_UNIT
+    assert isinstance(cleaned, CustomSizeUnit)
+    assert cleaned.slug == "custom"
+    assert field.clean("CUSTOM", garment) is CUSTOM_SIZE_UNIT
+    assert field.get_prep_value(cleaned) == "custom"
+    assert field.to_python("custom") is CUSTOM_SIZE_UNIT
+    form_field = field.formfield()
+    assert form_field.allow_custom is True
+    assert form_field.clean("custom") is CUSTOM_SIZE_UNIT
+    assert form_field.prepare_value(CUSTOM_SIZE_UNIT) == "custom"
+    labels = [(value, str(label)) for value, label in form_field.choices if value]
+    assert ("custom", "Custom") in labels
+    html = str(form_field.widget.render("size_unit", "custom"))
+    assert 'value="custom"' in html
+    assert cleaned.can_convert_to(SIZE_UNIT_BY_SLUG["uk-dress-size"]) is False
+    try:
+        Size.from_raw("10", cleaned)
+    except TypeError as exc:
+        assert "cannot be converted" in str(exc)
+    else:
+        raise AssertionError("expected TypeError")
+    _name, _path, _args, kwargs = field.deconstruct()
+    assert kwargs.get("allow_custom") is True
+    assert "choices" not in kwargs
+    with connection.schema_editor() as editor:
+        editor.create_model(CustomGarment)
+    saved = CustomGarment.objects.create(size_unit="custom")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT size_unit FROM {CustomGarment._meta.db_table} WHERE id = %s",
+            [saved.pk],
+        )
+        stored = cursor.fetchone()[0]
+    assert stored == "custom"
+    assert CustomGarment.objects.get(pk=saved.pk).size_unit is CUSTOM_SIZE_UNIT
 
 
 def test_model_form_saves_the_posted_slug() -> None:

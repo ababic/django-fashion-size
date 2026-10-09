@@ -16,6 +16,9 @@ function defaultFormat(measurement, context) {
   return measurement.storage_format;
 }
 
+const CUSTOM_FORMAT = "custom";
+const CUSTOM_ERROR = "Choose a custom size.";
+
 function filterValues(values, query) {
   const needle = query.trim().toLowerCase();
   if (!needle) {
@@ -84,10 +87,33 @@ function rowMatchesStored(row, stored, storageFormat) {
   return needle === cell || needle.endsWith(` ${cell}`);
 }
 
+function listedCustom(customValues, token) {
+  const needle = String(token || "").trim().toLowerCase();
+  if (!needle) {
+    return "";
+  }
+  return (
+    (customValues || []).find(
+      (item) => String(item).trim().toLowerCase() === needle
+    ) || ""
+  );
+}
+
+function onStorageChart(bundles, measurement, token) {
+  const list = bundles?.[measurement.storage_format]?.values || [];
+  return list.some((item) => item.stored === token);
+}
+
 function localStored({ measurement, bundles, format, text }) {
   const typed = text.trim();
   if (!typed) {
     return "";
+  }
+  if (measurement.custom || format === CUSTOM_FORMAT) {
+    const exact = (bundles?.[format]?.values || []).find(
+      (item) => item.input.toLowerCase() === typed.toLowerCase()
+    );
+    return exact ? exact.stored : null;
   }
   if (measurement.length) {
     return convertLength(typed, format, measurement.storage_format);
@@ -184,6 +210,8 @@ export function SizeValueField({
   attributeSlug,
   disabled,
   ariaLabel,
+  customValues,
+  customLabel,
   onChange,
   onEntry,
 }) {
@@ -192,12 +220,20 @@ export function SizeValueField({
   const controlRef = useRef(null);
   const inputRef = useRef(null);
   const linkRef = useRef(null);
+  const storedToken = storedValue || "";
+  const customHit =
+    !measurement.custom &&
+    Boolean(listedCustom(customValues, storedToken)) &&
+    !onStorageChart(bundles, measurement, storedToken);
+  const storedRef = useRef(customHit ? listedCustom(customValues, storedToken) : storedToken);
+  const customStash = useRef(customHit ? storedRef.current : "");
+  const unitToken = useRef(customHit ? "" : storedToken);
   const [format, setFormat] = useState(() =>
-    defaultFormat(measurement, context)
+    customHit ? CUSTOM_FORMAT : defaultFormat(measurement, context)
   );
   const [values, setValues] = useState([]);
   const [chart, setChart] = useState(null);
-  const [text, setText] = useState(storedValue || "");
+  const [text, setText] = useState(storedRef.current);
   const [open, setOpen] = useState(false);
   const [chartOpen, setChartOpen] = useState(false);
   const [chartBox, setChartBox] = useState(null);
@@ -205,8 +241,32 @@ export function SizeValueField({
   const [menuBox, setMenuBox] = useState(null);
   const [resolveError, setResolveError] = useState("");
   const focused = useRef(false);
+  const formats = useMemo(() => {
+    const base = measurement.formats || [];
+    if (
+      measurement.custom ||
+      !customValues?.length ||
+      base.some((item) => item.value === CUSTOM_FORMAT)
+    ) {
+      return base;
+    }
+    return [
+      ...base,
+      { value: CUSTOM_FORMAT, label: customLabel || "Custom" },
+    ];
+  }, [measurement, customValues, customLabel]);
 
   useEffect(() => {
+    if (format === CUSTOM_FORMAT && !measurement.custom) {
+      setValues(
+        (customValues || []).filter(Boolean).map((choice) => ({
+          input: choice,
+          stored: choice,
+        }))
+      );
+      setChart(null);
+      return undefined;
+    }
     let cancelled = false;
     loadSuggestions({ measurement, format, context, choices, bundles })
       .then((next) => {
@@ -228,30 +288,39 @@ export function SizeValueField({
     return () => {
       cancelled = true;
     };
-  }, [measurement, format, context, choices, bundles]);
+  }, [measurement, format, context, choices, bundles, customValues]);
 
   useEffect(() => {
     if (focused.current) {
       return;
     }
-    const match = values.find((item) => item.stored === storedValue);
+    if (format === CUSTOM_FORMAT) {
+      const stored = storedRef.current;
+      const match = values.find(
+        (item) => item.stored.toLowerCase() === String(stored || "").toLowerCase()
+      );
+      setText(match ? match.input : customStash.current || stored || "");
+      return;
+    }
+    const stored = storedRef.current;
+    const match = values.find((item) => item.stored === stored);
     if (match) {
       setText(match.input);
       return;
     }
     if (
       measurement.length &&
-      storedValue &&
+      stored &&
       format !== measurement.storage_format
     ) {
       setText(
-        convertLength(storedValue, measurement.storage_format, format, {
+        convertLength(stored, measurement.storage_format, format, {
           display: true,
-        }) || storedValue
+        }) || stored
       );
       return;
     }
-    setText(storedValue || "");
+    setText(stored || "");
   }, [storedValue, values, format, measurement]);
 
   const query = text.trim();
@@ -306,9 +375,67 @@ export function SizeValueField({
     return () => document.removeEventListener("mousedown", onPointer);
   }, [open]);
 
-  const publish = (stored, entryText) => {
-    onChange(stored);
-    onEntry?.({ text: entryText, format });
+  const publish = (stored, entryText, entryFormat = format) => {
+    const token = stored ?? "";
+    storedRef.current = token;
+    if (entryFormat === CUSTOM_FORMAT) {
+      customStash.current = entryText ?? "";
+    } else {
+      unitToken.current = token;
+    }
+    onChange(token);
+    onEntry?.({ text: entryText, format: entryFormat });
+  };
+
+  const displayFor = (stored, nextFormat) => {
+    if (!stored) {
+      return "";
+    }
+    if (nextFormat === CUSTOM_FORMAT) {
+      return stored;
+    }
+    const match = (bundles?.[nextFormat]?.values || []).find(
+      (item) => item.stored === stored
+    );
+    if (match) {
+      return match.input;
+    }
+    if (measurement.length && nextFormat !== measurement.storage_format) {
+      return (
+        convertLength(stored, measurement.storage_format, nextFormat, {
+          display: true,
+        }) || stored
+      );
+    }
+    return stored;
+  };
+
+  const selectFormat = (next) => {
+    if (next === format) {
+      return;
+    }
+    setOpen(false);
+    setResolveError("");
+    if (format === CUSTOM_FORMAT) {
+      customStash.current = text;
+      const restored = unitToken.current || "";
+      storedRef.current = restored;
+      setText(displayFor(restored, next));
+      setFormat(next);
+      onChange(restored);
+      return;
+    }
+    if (next === CUSTOM_FORMAT) {
+      unitToken.current = storedRef.current || "";
+      const restored = customStash.current || "";
+      storedRef.current = restored;
+      customStash.current = restored;
+      setText(restored);
+      setFormat(next);
+      onChange(restored);
+      return;
+    }
+    setFormat(next);
   };
 
   const commit = (item, { focus = false } = {}) => {
@@ -361,9 +488,11 @@ export function SizeValueField({
         return;
       }
       setResolveError(
-        measurement.length
-          ? "Enter a length from 5 to 150 inches."
-          : "That size is not on the chart."
+        format === CUSTOM_FORMAT || measurement.custom
+          ? CUSTOM_ERROR
+          : measurement.length
+            ? "Enter a length from 5 to 150 inches."
+            : "That size is not on the chart."
       );
       return;
     }
@@ -491,24 +620,24 @@ export function SizeValueField({
   }, [text, format, onEntry]);
 
   const side = measurement.format_side === "right" ? "right" : "left";
-  const formatSelect = (
-    <select
-      className="size-value__format"
-      value={format}
-      disabled={disabled}
-      aria-label={`${measurement.label} format`}
-      onChange={(event) => {
-        setFormat(event.target.value);
-        setOpen(false);
-      }}
-    >
-      {measurement.formats.map((item) => (
-        <option key={item.value} value={item.value}>
-          {item.label}
-        </option>
-      ))}
-    </select>
-  );
+  const formatSelect =
+    formats.length > 1 ? (
+      <select
+        className="size-value__format"
+        value={format}
+        disabled={disabled}
+        aria-label={`${measurement.label} format`}
+        onChange={(event) => {
+          selectFormat(event.target.value);
+        }}
+      >
+        {formats.map((item) => (
+          <option key={item.value} value={item.value}>
+            {item.label}
+          </option>
+        ))}
+      </select>
+    ) : null;
 
   return (
     <div

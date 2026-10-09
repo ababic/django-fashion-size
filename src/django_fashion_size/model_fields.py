@@ -20,6 +20,7 @@ from fashion_size.types import (
     SizeUnit,
     format_raw,
     parse_size_unit_slug,
+    size_unit_choices_for_type,
 )
 
 from django_fashion_size.kinds import FashionProductType, SizeTypeSlug, SizeUnitSlug
@@ -96,15 +97,26 @@ class SizeUnitFormField(forms.TypedChoiceField):
     """Choice field whose submitted value is a size-unit slug.
 
     Options come from ``SizeUnitSlug``. Their labels are ``gettext_lazy``
-    strings. ``allow_custom`` adds a Custom option; ``SizeUnitField`` passes
-    its own ``allow_custom`` through, and that defaults to false. ``coerce``
-    is the model field's ``to_python``, so a posted slug becomes a
-    ``SizeUnit`` or ``CustomSizeUnit`` and the column still stores the slug.
+    strings. ``size_type`` limits those options to the units of that
+    ``SizeType``. ``allow_custom`` adds a Custom option, including when the
+    list is limited to one size type; ``SizeUnitField`` passes its own
+    ``allow_custom`` through, and that defaults to false. ``coerce`` is the
+    model field's ``to_python``, so a posted slug becomes a ``SizeUnit`` or
+    ``CustomSizeUnit`` and the column still stores the slug.
     """
 
-    def __init__(self, *, allow_custom: bool = False, **kwargs: Any) -> None:
-        # Set before ``choices`` is assigned. The setter reads this flag.
+    def __init__(
+        self,
+        *,
+        allow_custom: bool = False,
+        size_type: SizeType | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if size_type is not None and not isinstance(size_type, SizeType):
+            raise TypeError("size_type must be a SizeType.")
+        # Set before ``choices`` is assigned. The setter reads these.
         self.allow_custom = allow_custom
+        self.size_type = size_type
         super().__init__(**kwargs)
 
     def prepare_value(self, value: Any) -> Any:
@@ -126,6 +138,16 @@ class SizeUnitFormField(forms.TypedChoiceField):
     def choices(self, _value: Any) -> None:
         include_blank = not getattr(self, "required", True)
         choices = _translated_choices(SizeUnitSlug, include_blank=include_blank)
+        size_type = getattr(self, "size_type", None)
+        if isinstance(size_type, SizeType):
+            allowed = {
+                slug for slug, _label in size_unit_choices_for_type(str(size_type.slug))
+            }
+            choices = [
+                (value, label)
+                for value, label in choices
+                if value == "" or value in allowed
+            ]
         if getattr(self, "allow_custom", False):
             choices = [*choices, (CUSTOM_SIZE_UNIT_SLUG, _("Custom"))]
         self._choices = self.widget.choices = choices

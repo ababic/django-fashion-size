@@ -2,8 +2,10 @@
 
 import json
 import re
+from types import SimpleNamespace
 
 import django
+import pytest
 from django import forms
 from django.conf import settings
 
@@ -191,6 +193,32 @@ def test_brand_chart_is_embedded() -> None:
     assert chart["origin"] == "brand"
     assert config["brandField"] == "brand"
     assert config["productTypeField"] == "product_type"
+
+
+def test_brand_chart_without_effective_dates_supports_legacy_conversion_scale(monkeypatch: pytest.MonkeyPatch) -> None:
+    from django_fashion_size import widgets
+
+    captured: dict[str, object] = {}
+
+    class LegacyConversionScale:
+        def __init__(self, *, size_type: object, age_group: str, gender: str, rows: tuple[object, ...]) -> None:
+            captured["size_type"] = size_type
+            captured["age_group"] = age_group
+            captured["gender"] = gender
+            captured["rows"] = rows
+
+    monkeypatch.setattr(widgets, "ConversionScale", LegacyConversionScale)
+    chart = SimpleNamespace(
+        age_group="adult",
+        gender="female",
+        rows=({"uk": 2, "eu": 35, "us": 4, "au": 4},),
+    )
+    scale = widgets._scale_from_chart(UK_ADULT_SHOE_SIZE.size_type, chart)
+    assert isinstance(scale, LegacyConversionScale)
+    assert captured["size_type"] == UK_ADULT_SHOE_SIZE.size_type
+    assert captured["age_group"] == "adult"
+    assert captured["gender"] == "female"
+    assert len(captured["rows"]) == 1
 
 
 def test_charfield_accepts_a_size_unit_brand_name_and_product_type_name() -> None:

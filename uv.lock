@@ -54,7 +54,7 @@ wheels = [
 
 [[package]]
 name = "django-fashion-size"
-version = "0.9.1"
+version = "0.9.2"
 source = { editable = "." }
 dependencies = [
     { name = "django" },
@@ -73,7 +73,7 @@ testing = [
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = ">=6.0,<7" },
-    { name = "fashion-size", specifier = ">=2026.10.8.1" },
+    { name = "fashion-size", specifier = ">=2026.10.10.1" },
     { name = "pytest", marker = "extra == 'testing'", specifier = ">=8" },
     { name = "ruff", marker = "extra == 'development'", specifier = ">=0.11,<1" },
     { name = "tox", marker = "extra == 'testing'", specifier = ">=4" },
@@ -82,11 +82,11 @@ provides-extras = ["testing", "development"]
 
 [[package]]
 name = "fashion-size"
-version = "2026.10.8.1"
+version = "2026.10.10.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ff/15/03d0fe4f4cdcccf7e782c97260030c3c813a0f220edbdd0bb92386dab350/fashion_size-2026.10.8.1.tar.gz", hash = "sha256:cb771b94ed5320c1c17d07e019a2f6cbf46bcd0b88868243308a95191c47ebb9", size = 35744, upload-time = "2026-10-08T13:25:06.911Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/8d/75/ae68015bda52426799a86da3097cff3b50eb6f0805f4538d2b1ad40a23f8/fashion_size-2026.10.10.1.tar.gz", hash = "sha256:1749ab1fa55d0d9425e278279677fa1f0fa18b549e0c3a00c8a1bf8842a86022", size = 42154, upload-time = "2026-10-10T19:32:27.233Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d4/96/9b6948fd7413c02bc6391ab47db3c7eb7688a1206809b300f50e012907ce/fashion_size-2026.10.8.1-py3-none-any.whl", hash = "sha256:36ccc20259d4aabdb17f762b4d74714eda2313ae06e603a5afe70cd5dc5504e8", size = 39675, upload-time = "2026-10-08T13:25:05.306Z" },
+    { url = "https://files.pythonhosted.org/packages/a5/db/adc3433e5c1e974e034c30c403e8da091472ebc9cb710b24dfe0525cfc96/fashion_size-2026.10.10.1-py3-none-any.whl", hash = "sha256:04ca61c9313207e400e01120af6c9f8b4543cb725796415cbc0de6d28b138ee2", size = 42904, upload-time = "2026-10-10T19:32:25.625Z" },
 ]
 
 [[package]]

@@ -9,6 +9,7 @@ by ``SizeField``.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import InvalidOperation
 from typing import Any
 
@@ -217,12 +218,35 @@ def _scale_from_chart(size_type: SizeType, chart: Any) -> ConversionScale:
         rows = tuple(
             LocaleSizeRow.from_numbers(row["uk"], row["eu"], row["us"], row["au"]) for row in chart.rows
         )
-    return ConversionScale(
-        size_type=size_type,
-        age_group=chart.age_group,
-        gender=chart.gender,
-        rows=rows,
-    )
+    base = {
+        "size_type": size_type,
+        "age_group": chart.age_group,
+        "gender": chart.gender,
+        "rows": rows,
+    }
+    effective_from = getattr(chart, "effective_from", None) or getattr(chart, "updated_at", None)
+    effective_until = getattr(chart, "effective_until", None)
+    if effective_from is not None:
+        try:
+            return ConversionScale(
+                **base,
+                effective_from=effective_from,
+                effective_until=effective_until,
+            )
+        except TypeError:
+            # Older fashion-size releases did not include effective date fields.
+            pass
+    try:
+        return ConversionScale(**base)
+    except TypeError:
+        # Newer fashion-size releases require ``effective_from``. If the chart
+        # does not carry one, treat it as "latest now" instead of requiring an
+        # explicit lookup date from callers.
+        return ConversionScale(
+            **base,
+            effective_from=datetime.now(UTC),
+            effective_until=effective_until,
+        )
 
 
 def _resolve_scale(

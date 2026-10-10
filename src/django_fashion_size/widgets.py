@@ -239,10 +239,12 @@ def _scale_from_chart(size_type: SizeType, chart: Any) -> ConversionScale:
     try:
         return ConversionScale(**base)
     except TypeError:
-        # Newer fashion-size releases require ``effective_from``.
+        # Newer fashion-size releases require ``effective_from``. If the chart
+        # does not carry one, treat it as "latest now" instead of requiring an
+        # explicit lookup date from callers.
         return ConversionScale(
             **base,
-            effective_from=datetime(1970, 1, 1, tzinfo=UTC),
+            effective_from=datetime.now(UTC),
             effective_until=effective_until,
         )
 

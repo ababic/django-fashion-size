@@ -83,7 +83,11 @@ provides-extras = ["testing", "development"]
 [[package]]
 name = "fashion-size"
 version = "2026.10.21"
-source = { git = "https://github.com/ababic/fashion-size?rev=6a5c1df33e3feb8d68d1a2fd16912f3e4c7f343c#6a5c1df33e3feb8d68d1a2fd16912f3e4c7f343c" }
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ea/44/78e2ff14e1e58600b84621e460cfb3ecf9a822aea197db727ea75353f6f9/fashion_size-2026.10.21.tar.gz", hash = "sha256:fb88209a7249d9fc2600e88907671b4c50f9504b8b61281385360c5faeb4120c", size = 71889, upload-time = "2026-10-21T18:54:54.66Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fb/e7/0c184049db5ecbe61c8b60601fb9185ff6553f4a6c2956e55a5c5849d4d0/fashion_size-2026.10.21-py3-none-any.whl", hash = "sha256:0296680fd71ce7bb9caf572c60700e439515f37c050d980758402c99253ef87a", size = 64592, upload-time = "2026-10-21T18:54:53.326Z" },
+]
 
 [[package]]
 name = "filelock"

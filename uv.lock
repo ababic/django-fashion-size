@@ -54,7 +54,7 @@ wheels = [
 
 [[package]]
 name = "django-fashion-size"
-version = "0.10.0"
+version = "0.10.1"
 source = { editable = "." }
 dependencies = [
     { name = "django" },
@@ -73,7 +73,7 @@ testing = [
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = ">=6.0,<7" },
-    { name = "fashion-size", specifier = ">=2026.10.20" },
+    { name = "fashion-size", specifier = ">=2026.10.21" },
     { name = "pytest", marker = "extra == 'testing'", specifier = ">=8" },
     { name = "ruff", marker = "extra == 'development'", specifier = ">=0.11,<1" },
     { name = "tox", marker = "extra == 'testing'", specifier = ">=4" },
@@ -82,12 +82,8 @@ provides-extras = ["testing", "development"]
 
 [[package]]
 name = "fashion-size"
-version = "2026.10.20"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/01/ef/1d035cc92338f9db29a244ee62a70454b59cba082b75f2478c2ff24b796b/fashion_size-2026.10.20.tar.gz", hash = "sha256:70ae40f5c98c5763da4b0ddf1e4de1cf871ed3a5a41e079ada14716e9d321c3a", size = 71429, upload-time = "2026-10-20T21:36:48.633Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/23/80/328daef6066fa960b2cc4cf828d2490331dfb4c0535ab1ab016d194593bd/fashion_size-2026.10.20-py3-none-any.whl", hash = "sha256:dc62a8625c3a4dbe218b5011cd133decab67a34f168422d23a274962b61d6464", size = 64399, upload-time = "2026-10-20T21:36:46.296Z" },
-]
+version = "2026.10.21"
+source = { git = "https://github.com/ababic/fashion-size?rev=6a5c1df33e3feb8d68d1a2fd16912f3e4c7f343c#6a5c1df33e3feb8d68d1a2fd16912f3e4c7f343c" }
 
 [[package]]
 name = "filelock"

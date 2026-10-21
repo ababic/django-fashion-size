@@ -116,7 +116,10 @@ function localStored({ measurement, bundles, format, text }) {
     return exact ? exact.stored : null;
   }
   if (measurement.length) {
-    return convertLength(typed, format, measurement.storage_format);
+    return convertLength(typed, format, measurement.storage_format, {
+      minInches: measurement.length_min,
+      maxInches: measurement.length_max,
+    });
   }
   const bundle = bundles?.[format];
   const exact = bundle?.values?.find(
@@ -316,6 +319,8 @@ export function SizeValueField({
       setText(
         convertLength(stored, measurement.storage_format, format, {
           display: true,
+          minInches: measurement.length_min,
+          maxInches: measurement.length_max,
         }) || stored
       );
       return;
@@ -404,6 +409,8 @@ export function SizeValueField({
       return (
         convertLength(stored, measurement.storage_format, nextFormat, {
           display: true,
+          minInches: measurement.length_min,
+          maxInches: measurement.length_max,
         }) || stored
       );
     }
@@ -491,7 +498,8 @@ export function SizeValueField({
         format === CUSTOM_FORMAT || measurement.custom
           ? CUSTOM_ERROR
           : measurement.length
-            ? "Enter a length from 5 to 150 inches."
+            ? measurement.length_error ||
+              "Enter a length from 5 to 150 inches."
             : "That size is not on the chart."
       );
       return;

@@ -123,10 +123,24 @@ function inchesOf(text, unit) {
   return null;
 }
 
-function inRange(inchesNum, inchesDen) {
-  const min = inchesNum * 1n >= 5n * inchesDen;
-  const max = inchesNum * 1n <= 150n * inchesDen;
-  return min && max;
+function compareInches(inchesNum, inchesDen, boundText, { upper }) {
+  const bound = parseDecimal(String(boundText ?? ""));
+  if (!bound) {
+    return true;
+  }
+  const left = inchesNum * bound.den;
+  const right = bound.num * inchesDen;
+  return upper ? left <= right : left >= right;
+}
+
+function inRange(inchesNum, inchesDen, minInches, maxInches) {
+  if (minInches == null || maxInches == null) {
+    return true;
+  }
+  return (
+    compareInches(inchesNum, inchesDen, minInches, { upper: false }) &&
+    compareInches(inchesNum, inchesDen, maxInches, { upper: true })
+  );
 }
 
 function roundHalfUpRational(num, den) {
@@ -143,7 +157,12 @@ function roundHalfInchRational(num, den) {
   return `${doubled / 2n}.5`;
 }
 
-export function convertLength(text, fromUnit, toUnit, { display = false } = {}) {
+export function convertLength(
+  text,
+  fromUnit,
+  toUnit,
+  { display = false, minInches, maxInches } = {},
+) {
   const from = fromUnit === "inches" ? "in" : fromUnit;
   const to = toUnit === "centimetres" ? "cm" : toUnit;
   if ((from !== "in" && from !== "cm") || (to !== "in" && to !== "cm")) {
@@ -151,7 +170,7 @@ export function convertLength(text, fromUnit, toUnit, { display = false } = {}) 
   }
   const parsed = parseDecimal(text);
   const inches = inchesOf(text, from);
-  if (!parsed || !inches || !inRange(inches[0], inches[1])) {
+  if (!parsed || !inches || !inRange(inches[0], inches[1], minInches, maxInches)) {
     return null;
   }
   let storedNum;

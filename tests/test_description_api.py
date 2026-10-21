@@ -39,7 +39,7 @@ class _User:
 
 def _post(view, payload, *, user=None, csrf: bool = False):
     request = RequestFactory().post(
-        "/api/size-descriptions/decode/",
+        "/size-description-decode/",
         data=json.dumps(payload),
         content_type="application/json",
     )
@@ -212,7 +212,7 @@ def test_request_level_errors_reject_the_batch() -> None:
     assert empty_items.status_code == 200
     assert _body(empty_items)["results"] == []
     not_json = RequestFactory().post(
-        "/api/size-descriptions/decode/",
+        "/size-description-decode/",
         data="nope",
         content_type="application/json",
     )
@@ -233,20 +233,26 @@ def test_urls_stay_unregistered_until_included() -> None:
     empty = _urlconf("empty_description_urls", [])
     mounted = _urlconf(
         "mounted_description_urls",
-        [path("api/size-descriptions/", include("django_fashion_size.urls"))],
+        [path("", include("django_fashion_size.urls"))],
     )
     with override_settings(ROOT_URLCONF=empty), pytest.raises(Resolver404):
-        resolve("/api/size-descriptions/decode/")
+        resolve("/size-description-decode/")
     with override_settings(ROOT_URLCONF=mounted):
-        match = resolve("/api/size-descriptions/decode/")
+        match = resolve("/size-description-decode/")
         assert match.func is decode_size_descriptions
-        assert resolve("/api/size-descriptions/encode/").func is encode_size_descriptions
-        assert reverse("django_fashion_size:decode") == "/api/size-descriptions/decode/"
-        assert reverse("django_fashion_size:encode") == "/api/size-descriptions/encode/"
+        assert resolve("/size-description-encode/").func is encode_size_descriptions
+        assert (
+            reverse("django_fashion_size:size-description-decode")
+            == "/size-description-decode/"
+        )
+        assert (
+            reverse("django_fashion_size:size-description-encode")
+            == "/size-description-encode/"
+        )
 
 
 def test_get_is_not_allowed() -> None:
-    request = RequestFactory().get("/api/size-descriptions/decode/")
+    request = RequestFactory().get("/size-description-decode/")
     request.user = _User(authenticated=True)
     request._dont_enforce_csrf_checks = True
     response = decode_size_descriptions(request)

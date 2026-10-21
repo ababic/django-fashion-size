@@ -3,10 +3,9 @@
 Include this module to mount them. They stay unregistered until a project
 does so, including when ``django_fashion_size`` is in ``INSTALLED_APPS``::
 
-    path("api/size-descriptions/", include("django_fashion_size.urls"))
+    path("", include("django_fashion_size.urls"))
 
-That serves ``decode/`` and ``encode/`` at ``/api/size-descriptions/decode/``
-and ``/api/size-descriptions/encode/``.
+That serves ``/size-description-decode/`` and ``/size-description-encode/``.
 """
 
 from django.urls import path
@@ -19,6 +18,14 @@ from django_fashion_size.description_api import (
 app_name = "django_fashion_size"
 
 urlpatterns = [
-    path("decode/", decode_size_descriptions, name="decode"),
-    path("encode/", encode_size_descriptions, name="encode"),
+    path(
+        "size-description-decode/",
+        decode_size_descriptions,
+        name="size-description-decode",
+    ),
+    path(
+        "size-description-encode/",
+        encode_size_descriptions,
+        name="size-description-encode",
+    ),
 ]

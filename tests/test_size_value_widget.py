@@ -21,7 +21,13 @@ if not settings.configured:
 
 from django.db import models
 
-from fashion_size.types import CM_CHEST_SIZE, SIZE_UNIT_BY_SLUG, Size, UK_ADULT_SHOE_SIZE
+from fashion_size.types import (
+    CM_CHEST_SIZE,
+    SIZE_UNIT_BY_SLUG,
+    Size,
+    UK_ADULT_SHOE_SIZE,
+    UK_KIDS_SHOE_SIZE,
+)
 
 from django_fashion_size import (
     CUSTOM_SIZE_UNIT,
@@ -175,6 +181,35 @@ def test_inches_posted_into_a_centimetre_field() -> None:
     assert form.is_valid(), form.errors
     assert form.cleaned_data["size"] == ("81.28", CM_CHEST_SIZE)
     assert stored_size_token(Size.from_raw("81.28", CM_CHEST_SIZE)) == "81.28"
+
+
+def test_baby_kids_shoe_uses_the_kids_default_chart() -> None:
+    form = ItemForm(
+        initial={
+            "size_unit": "uk-kids-shoe-size",
+            "age_group": "baby",
+            "gender": "male",
+        }
+    )
+    config = _config(form)
+    chart = config["charts"]["kids-shoe"]
+    assert chart["origin"] == "default"
+    assert chart["rows"]
+    form = ItemForm(
+        data={
+            "size_unit": "uk-kids-shoe-size",
+            "age_group": "baby",
+            "gender": "male",
+            "size__active": "1",
+            "size__entry": "6",
+            "size__format": "uk",
+            "size__unit": "uk-kids-shoe-size",
+            "size__age_group": "baby",
+            "size__gender": "male",
+        }
+    )
+    assert form.is_valid(), form.errors
+    assert form.cleaned_data["size"] == ("6", UK_KIDS_SHOE_SIZE)
 
 
 def test_brand_chart_is_embedded() -> None:

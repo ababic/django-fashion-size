@@ -30,7 +30,17 @@ class SizeTypeSlug(models.TextChoices):
     CHEST = FashionSizeTypeSlug.CHEST, _("Chest")
     WAIST = FashionSizeTypeSlug.WAIST, _("Waist")
     INSIDE_LEG = FashionSizeTypeSlug.INSIDE_LEG, _("Inside leg")
+    SHORTS_INSEAM = FashionSizeTypeSlug.SHORTS_INSEAM, _("Shorts inseam")
+    TROUSERS_INSEAM = FashionSizeTypeSlug.TROUSERS_INSEAM, _("Trousers inseam")
     COLLAR = FashionSizeTypeSlug.COLLAR, _("Collar")
+    SLEEVE = FashionSizeTypeSlug.SLEEVE, _("Sleeve")
+    TROUSER_LENGTH = FashionSizeTypeSlug.TROUSER_LENGTH, _("Trouser length")
+    TOP_LENGTH = FashionSizeTypeSlug.TOP_LENGTH, _("Top length")
+    SHOE_WIDTH = FashionSizeTypeSlug.SHOE_WIDTH, _("Shoe width")
+    PROPORTION = FashionSizeTypeSlug.PROPORTION, _("Proportion")
+    AGE_MONTHS = FashionSizeTypeSlug.AGE_MONTHS, _("Age (months)")
+    AGE_YEARS = FashionSizeTypeSlug.AGE_YEARS, _("Age (years)")
+    LETTER = FashionSizeTypeSlug.LETTER, _("Letter size")
 
 
 class SizeUnitSlug(models.TextChoices):
@@ -80,8 +90,21 @@ class SizeUnitSlug(models.TextChoices):
     CM_WAIST_SIZE = "cm-waist-size", _("Waist (centimetres)")
     IN_INSIDE_LEG = "in-inside-leg", _("Inside leg (inches)")
     CM_INSIDE_LEG = "cm-inside-leg", _("Inside leg (centimetres)")
+    IN_SHORTS_INSEAM = "in-shorts-inseam", _("Shorts inseam (inches)")
+    CM_SHORTS_INSEAM = "cm-shorts-inseam", _("Shorts inseam (centimetres)")
+    IN_TROUSERS_INSEAM = "in-trousers-inseam", _("Trousers inseam (inches)")
+    CM_TROUSERS_INSEAM = "cm-trousers-inseam", _("Trousers inseam (centimetres)")
     IN_COLLAR_SIZE = "in-collar-size", _("Collar (inches)")
     CM_COLLAR_SIZE = "cm-collar-size", _("Collar (centimetres)")
+    IN_SLEEVE_LENGTH = "in-sleeve-length", _("Sleeve (inches)")
+    CM_SLEEVE_LENGTH = "cm-sleeve-length", _("Sleeve (centimetres)")
+    TROUSER_LENGTH = "trouser-length", _("Trouser length")
+    TOP_LENGTH = "top-length", _("Top length")
+    SHOE_WIDTH = "shoe-width", _("Shoe width")
+    PROPORTION = "proportion", _("Proportion")
+    AGE_MONTHS = "age-months", _("Age (months)")
+    AGE_YEARS = "age-years", _("Age (years)")
+    LETTER = "letter", _("Letter size")
 
 
 class FashionProductType(models.TextChoices):

@@ -439,6 +439,145 @@ def test_fixed_unit_custom_value_has_no_size_unit() -> None:
     assert charted.cleaned_data["value"] == ("5", UK_ADULT_SHOE_SIZE)
 
 
+def test_letter_size_lists_its_vocabulary_and_stores_the_canonical_token() -> None:
+    form = ItemForm(initial={"size_unit": "letter", "size": "ONE"})
+    unit = _config(form)["units"]["letter"]
+    measurement = unit["measurement"]
+    assert measurement["length"] is False
+    assert measurement["storage_format"] == "letter"
+    assert [item["value"] for item in measurement["formats"]] == ["letter"]
+    assert unit["chartKey"] == ""
+    one = next(item for item in unit["values"]["letter"] if item["stored"] == "ONE")
+    assert one["input"] == "One size"
+    posted = ItemForm(
+        data={
+            "size_unit": "letter",
+            "size__active": "1",
+            "size__entry": "small",
+            "size__format": "letter",
+            "size__unit": "letter",
+        }
+    )
+    assert posted.is_valid(), posted.errors
+    assert posted.cleaned_data["size"] == ("S", SIZE_UNIT_BY_SLUG["letter"])
+    canonical = ItemForm(
+        data={
+            "size_unit": "letter",
+            "size__active": "1",
+            "size__entry": "ONE",
+            "size__format": "letter",
+            "size__unit": "letter",
+        }
+    )
+    assert canonical.is_valid(), canonical.errors
+    assert canonical.cleaned_data["size"] == ("ONE", SIZE_UNIT_BY_SLUG["letter"])
+    rejected = ItemForm(
+        data={
+            "size_unit": "letter",
+            "size__active": "1",
+            "size__entry": "nope",
+            "size__format": "letter",
+            "size__unit": "letter",
+        }
+    )
+    assert not rejected.is_valid()
+    assert "not recognised" in rejected.errors["size"][0]
+
+
+def test_trouser_length_alias_stores_the_canonical_token() -> None:
+    form = ItemForm(
+        data={
+            "size_unit": "trouser-length",
+            "size__active": "1",
+            "size__entry": "R",
+            "size__format": "trouser-length",
+            "size__unit": "trouser-length",
+        }
+    )
+    assert form.is_valid(), form.errors
+    assert form.cleaned_data["size"] == ("regular", SIZE_UNIT_BY_SLUG["trouser-length"])
+    suggestions = _config(ItemForm(initial={"size_unit": "trouser-length"}))
+    regular = next(
+        item
+        for item in suggestions["units"]["trouser-length"]["values"]["trouser-length"]
+        if item["stored"] == "regular"
+    )
+    assert regular["input"] == "Regular"
+
+
+def test_age_months_accepts_a_typed_band() -> None:
+    config = _config(ItemForm(initial={"size_unit": "age-months"}))
+    assert config["units"]["age-months"]["values"]["age-months"] == []
+    form = ItemForm(
+        data={
+            "size_unit": "age-months",
+            "size__active": "1",
+            "size__entry": "6 months",
+            "size__format": "age-months",
+            "size__unit": "age-months",
+        }
+    )
+    assert form.is_valid(), form.errors
+    assert form.cleaned_data["size"] == ("6", SIZE_UNIT_BY_SLUG["age-months"])
+
+
+def test_shorts_inseam_uses_its_own_inch_bounds() -> None:
+    measurement = _config(ItemForm(initial={"size_unit": "in-shorts-inseam"}))["units"][
+        "in-shorts-inseam"
+    ]["measurement"]
+    assert measurement["length"] is True
+    assert measurement["length_min"] == "2"
+    assert measurement["length_max"] == "22"
+    assert measurement["length_error"] == "Enter a length from 2 to 22 inches."
+    assert [item["value"] for item in measurement["formats"]] == ["in", "cm"]
+    posted = ItemForm(
+        data={
+            "size_unit": "cm-shorts-inseam",
+            "size__active": "1",
+            "size__entry": "10",
+            "size__format": "in",
+            "size__unit": "cm-shorts-inseam",
+        }
+    )
+    assert posted.is_valid(), posted.errors
+    assert posted.cleaned_data["size"] == ("25.4", SIZE_UNIT_BY_SLUG["cm-shorts-inseam"])
+    rejected = ItemForm(
+        data={
+            "size_unit": "in-shorts-inseam",
+            "size__active": "1",
+            "size__entry": "23",
+            "size__format": "in",
+            "size__unit": "in-shorts-inseam",
+        }
+    )
+    assert not rejected.is_valid()
+    assert "2 to 22" in rejected.errors["size"][0]
+
+
+def test_sleeve_and_inside_leg_use_their_own_bounds() -> None:
+    sleeve = _config(ItemForm(initial={"size_unit": "in-sleeve-length"}))["units"][
+        "in-sleeve-length"
+    ]["measurement"]
+    assert sleeve["length_min"] == "28"
+    assert sleeve["length_max"] == "40"
+    inside = _config(ItemForm(initial={"size_unit": "in-inside-leg"}))["units"][
+        "in-inside-leg"
+    ]["measurement"]
+    assert inside["length_min"] == "2"
+    assert inside["length_max"] == "42"
+    rejected = ItemForm(
+        data={
+            "size_unit": "in-inside-leg",
+            "size__active": "1",
+            "size__entry": "100",
+            "size__format": "in",
+            "size__unit": "in-inside-leg",
+        }
+    )
+    assert not rejected.is_valid()
+    assert "2 to 42" in rejected.errors["size"][0]
+
+
 def test_model_field_uses_the_autocomplete_widget() -> None:
     field = Item._meta.get_field("size").formfield()
     assert isinstance(field, SizeFormField)

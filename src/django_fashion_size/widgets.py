@@ -41,6 +41,8 @@ from fashion_size.types import (
     format_age_gender,
     format_raw,
     is_cup_alpha_token,
+    length_entry_bounds,
+    length_value_in_range,
     normalize_raw,
     parse_size_unit_slug,
     size_from_attribute_option,
@@ -50,6 +52,7 @@ from fashion_size.types import (
 
 from django_fashion_size.model_fields import (
     CUSTOM_SIZE_UNIT_SLUG,
+    length_bounds_message,
     resolve_size_unit,
     stored_size_token,
 )
@@ -57,7 +60,7 @@ from django_fashion_size.model_fields import (
 _CHART_FORMATS = (("uk", "UK"), ("eu", "EU"), ("us", "US"), ("au", "AU"))
 _LENGTH_FORMATS = (("in", "in"), ("cm", "cm"))
 _NOT_ON_CHART = "That size is not on the chart."
-_LENGTH_RANGE = "Enter a length from 5 to 150 inches."
+_UNRECOGNISED_LABEL = "That size is not recognised."
 _CUSTOM_SIZE = "Choose a custom size."
 _CUSTOM_LABEL = _("Custom")
 
@@ -97,11 +100,44 @@ def _match_custom(text: str, custom_values: tuple[str, ...]) -> str | None:
 
 
 def _entry_formats(size_type: SizeType) -> tuple[tuple[str, str], ...]:
+    if size_type.family == SizeFamily.LABEL:
+        # One universal unit. The select stays hidden; the value is the type slug.
+        return ((str(size_type.slug), size_type.label),)
     if size_type.family == SizeFamily.LENGTH:
         return _LENGTH_FORMATS
     if size_type.family.french_matches_eu or size_type.family == SizeFamily.BAND_SIZE:
         return (*_CHART_FORMATS, ("fr", "FR"))
     return _CHART_FORMATS
+
+
+def _label_suggestions(size_type: SizeType) -> list[dict[str, str]]:
+    """Display word and canonical token for a label size type.
+
+    Age bands have no fixed list; the field accepts a typed age and
+    ``fashion-size`` canonicalises it. ``ONE`` is a stored letter token
+    whose alias is ``one size``, so the suggestion shows that word.
+    """
+    vocabulary = size_type.vocabulary
+    if vocabulary is None:
+        return []
+    return [{"input": label, "stored": token} for token, label in vocabulary.display]
+
+
+def _canonical_label(size_unit: SizeUnit, text: str) -> str:
+    """Stored token for a label size, including a token that is already canonical.
+
+    ``Size.from_raw`` folds aliases (``small``, ``one size``, ``6 months``).
+    A saved letter token such as ``ONE`` is not itself an alias, so a value
+    already in the vocabulary is kept.
+    """
+    try:
+        return stored_size_token(Size.from_raw(text, size_unit))
+    except (ValueError, InvalidOperation, TypeError):
+        vocabulary = size_unit.size_type.vocabulary
+        token = text.strip()
+        if vocabulary is not None and token in dict(vocabulary.display):
+            return token
+        raise ValidationError(_UNRECOGNISED_LABEL) from None
 
 
 def _is_length_size(size_unit: SizeUnit) -> bool:
@@ -115,6 +151,8 @@ def _is_length_size(size_unit: SizeUnit) -> bool:
 
 
 def _storage_format(size_unit: SizeUnit) -> str:
+    if size_unit.size_type.family == SizeFamily.LABEL:
+        return str(size_unit.size_type.slug)
     if _is_length_size(size_unit) and size_unit.length_unit:
         return size_unit.length_unit
     return size_unit.locale.value
@@ -471,13 +509,22 @@ def _convert_entry(
     except StopIteration as exc:
         raise ValidationError(_NOT_ON_CHART) from exc
     size_type = storage.size_type
+    if size_type.family == SizeFamily.LABEL:
+        if format_name != str(size_type.slug):
+            raise ValidationError(_UNRECOGNISED_LABEL)
+        return _canonical_label(storage, text)
+    length_message = (
+        length_bounds_message(size_type) if size_type.family == SizeFamily.LENGTH else None
+    )
     allowed = {value for value, _label in _entry_formats(size_type)}
     if format_name not in allowed:
-        raise ValidationError(_NOT_ON_CHART)
+        raise ValidationError(length_message or _NOT_ON_CHART)
     try:
         entered = Size.from_raw(text, _entry_unit(size_type, format_name))
     except (InvalidOperation, ValueError, TypeError) as exc:
-        raise ValidationError(_LENGTH_RANGE if size_type.family == SizeFamily.LENGTH else _NOT_ON_CHART) from exc
+        raise ValidationError(length_message or _NOT_ON_CHART) from exc
+    if length_message is not None and not length_value_in_range(entered.raw, entered.size_unit):
+        raise ValidationError(length_message)
     is_length = size_type.family == SizeFamily.LENGTH
     if not is_length and (not str(age_group or "").strip() or not str(gender or "").strip()):
         if format_name == _storage_format(storage):
@@ -511,7 +558,7 @@ def _convert_entry(
             product_type=resolved_product_type,
         )
     except (UnknownSizeError, MissingScaleError, IncompatibleSizeError, LengthOutOfRangeError, ValueError) as exc:
-        raise ValidationError(_LENGTH_RANGE if is_length else _NOT_ON_CHART) from exc
+        raise ValidationError(length_message or _NOT_ON_CHART) from exc
     return stored_size_token(converted.size)
 
 
@@ -604,7 +651,8 @@ def size_value_config(
     scales: dict[str, tuple[ConversionScale | None, Any]] = {}
     for size_unit in units:
         key = size_unit.size_type.slug
-        if key not in scales:
+        is_label = size_unit.size_type.family == SizeFamily.LABEL
+        if not is_label and key not in scales:
             scales[key] = _resolve_scale(
                 size_unit.size_type,
                 age_group=age_group,
@@ -612,7 +660,7 @@ def size_value_config(
                 brand_name=brand,
                 product_type=product_type,
             )
-        scale, brand_chart = scales[key]
+        scale, brand_chart = (None, None) if is_label else scales[key]
         formats = _entry_formats(size_unit.size_type)
         chart_key = ""
         if scale is not None:
@@ -621,7 +669,9 @@ def size_value_config(
                 charts[chart_key] = _chart_payload(scale, size_unit.size_type, formats, brand_chart, gender)
         values: dict[str, list[dict[str, str]]] = {}
         unit_choices = choices if size_unit.slug == current else None
-        if scale is not None:
+        if is_label:
+            values[str(size_unit.size_type.slug)] = _label_suggestions(size_unit.size_type)
+        elif scale is not None:
             for format_name, _format_label in formats:
                 values[format_name] = _suggestion_values(
                     scale,
@@ -629,16 +679,22 @@ def size_value_config(
                     _entry_unit(size_unit.size_type, format_name),
                     unit_choices,
                 )
+        measurement: dict[str, Any] = {
+            "kind": size_unit.size_type.slug,
+            "label": size_unit.size_type.label,
+            "storage_format": _storage_format(size_unit),
+            "storage_measurement": size_unit.slug,
+            "format_side": "right" if _is_length_size(size_unit) else "left",
+            "formats": [{"value": value, "label": format_label} for value, format_label in formats],
+            "length": _is_length_size(size_unit),
+        }
+        if measurement["length"]:
+            bounds = length_entry_bounds(size_unit.size_type)
+            measurement["length_min"] = format_raw(bounds.min_inches)
+            measurement["length_max"] = format_raw(bounds.max_inches)
+            measurement["length_error"] = length_bounds_message(size_unit.size_type)
         payload[size_unit.slug] = {
-            "measurement": {
-                "kind": size_unit.size_type.slug,
-                "label": size_unit.size_type.label,
-                "storage_format": _storage_format(size_unit),
-                "storage_measurement": size_unit.slug,
-                "format_side": "right" if _is_length_size(size_unit) else "left",
-                "formats": [{"value": value, "label": format_label} for value, format_label in formats],
-                "length": _is_length_size(size_unit),
-            },
+            "measurement": measurement,
             "context": {
                 "demographic_label": _demographic_label(age_group, gender),
                 "product_type_name": _product_label(product_type) if product_type else "",

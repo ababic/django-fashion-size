@@ -10,6 +10,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models.fields import BLANK_CHOICE_DASH
 from django.db.models.query_utils import DeferredAttribute
+from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
 from fashion_size.product_types import ProductType, resolve_product_type
 from fashion_size.types import (
@@ -19,6 +20,8 @@ from fashion_size.types import (
     SizeType,
     SizeUnit,
     format_raw,
+    length_entry_bounds,
+    length_value_in_range,
     parse_size_unit_slug,
     size_unit_choices_for_type,
 )
@@ -548,6 +551,43 @@ def _format_length_token(raw: Any) -> str:
     return text or "0"
 
 
+def length_bounds_message(size_type: SizeType) -> str:
+    """Inclusive inch bounds for a length size type, in the active language."""
+    bounds = length_entry_bounds(size_type)
+    return gettext("Enter a length from %(start)s to %(stop)s inches.") % {
+        "start": format_raw(bounds.min_inches),
+        "stop": format_raw(bounds.max_inches),
+    }
+
+
+def size_from_stored_token(raw: str, size_unit: SizeUnit) -> Size:
+    """Build a ``Size`` from a stored token.
+
+    ``fashion-size`` stores the letter token ``ONE`` but only accepts its
+    aliases (``one size``, ``os``) in ``Size.from_raw``. A token that is
+    already in the vocabulary is loaded through one of those aliases.
+    """
+    try:
+        return Size.from_raw(raw, size_unit)
+    except (InvalidOperation, ValueError, TypeError):
+        vocabulary = size_unit.size_type.vocabulary
+        if vocabulary is None or raw not in dict(vocabulary.display):
+            raise
+        for alias, token in vocabulary.aliases:
+            if token == raw:
+                return Size.from_raw(alias, size_unit)
+        raise
+
+
+def ensure_length_in_range(size: Size) -> None:
+    """Reject a length that sits outside its size type's inch bounds."""
+    if not size.size_unit.length_unit:
+        return
+    if length_value_in_range(size.raw, size.size_unit):
+        return
+    raise ValidationError(length_bounds_message(size.size_type))
+
+
 def stored_size_token(value: Any) -> str:
     """Column text for a size: ``10``, ``7.5``, ``DD``, ``81.28``, or blank."""
     if isinstance(value, Size):
@@ -578,7 +618,7 @@ class SizeDescriptor(DeferredAttribute):
             raise ValueError(
                 f"Cannot read {self.field.name!r}: {self.field.size_unit_field!r} is empty."
             )
-        return Size.from_raw(raw, size_unit)
+        return size_from_stored_token(str(raw), size_unit)
 
     def __set__(self, instance: models.Model, value: Any) -> None:
         # ``SizeFormField`` cleans to ``(token, size_unit)``. The column stores the token.
@@ -672,7 +712,9 @@ class SizeField(models.CharField):
         if size_unit is None:
             raise ValidationError(f"Set {self.size_unit_field} before storing a size.")
         try:
-            token = stored_size_token(Size.from_raw(raw, size_unit))
+            size = size_from_stored_token(str(raw), size_unit)
+            ensure_length_in_range(size)
+            token = stored_size_token(size)
         except (InvalidOperation, ValueError, TypeError) as exc:
             raise ValidationError(f"Invalid size {raw!r}.") from exc
         model_instance.__dict__[self.attname] = token
@@ -688,7 +730,8 @@ class SizeField(models.CharField):
         if size_unit is None:
             raise ValidationError(f"Set {self.size_unit_field} before storing a size.")
         try:
-            Size.from_raw(token, size_unit)
+            size = size_from_stored_token(token, size_unit)
+            ensure_length_in_range(size)
         except (InvalidOperation, ValueError, TypeError) as exc:
             raise ValidationError(f"Invalid size {token!r}.") from exc
         return token

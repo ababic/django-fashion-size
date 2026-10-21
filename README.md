@@ -80,6 +80,10 @@ Importing this package registers Django's `get_language` as the `fashion-size` d
 
 `SizeField`'s form control is an autocomplete. You type a size and the list shows chart values that start with that text. A short select beside the field chooses the region or unit you are typing (`UK`, `EU`, `in`, `cm`). A "View conversion chart" link to the right of the field opens the conversion chart. The value saved on the model is the token in `size_unit_field` (`10` when the field stores UK dress sizes, even if you typed EU `38`). Add `django_fashion_size` to `INSTALLED_APPS` so the widget's CSS and script are found.
 
+Length size types (`chest`, `waist`, `inside-leg`, `shorts-inseam`, `trousers-inseam`, `collar`, `sleeve`) convert between inches and centimetres inside that type's own bounds. Shorts inseam is 2–22 inches, trousers inseam is 24–42, and sleeve is 28–40. The autocomplete uses those bounds.
+
+Label size types (`trouser-length`, `top-length`, `shoe-width`, `proportion`, `age-months`, `age-years`, `letter`) have one universal unit and no conversion chart. The autocomplete lists the vocabulary (`Regular`, `One size`). Age bands have no fixed list: type `6 months` or `2-3 years` and the stored token is the canonical band (`6`, `2-3`). Aliases such as `R` and `small` are stored as `regular` and `S`.
+
 The same control is `SizeFormField`, so a `CharField` such as `AttributeValue.value` can use it without becoming a `SizeField`. Pass the attribute's `SizeUnit` and the brand and product type you already have. `brand_name` is the brand's name. `product_type_name` is the product type's name (`Shoes`) or slug (`shoes`). Age group and gender select the chart.
 
 ```python
@@ -101,3 +105,46 @@ value = SizeFormField(
     product_type_name_field="product_type_name",
 )
 ```
+
+## Size description API
+
+`fashion_size.descriptions` can read a feed string and join sizes back into one. Two POST endpoints expose that to JavaScript and other non-Python clients. They are not mounted until you include them:
+
+```python
+path("fashion-size/", include("django_fashion_size.urls"))
+```
+
+`descriptions/decode/` and `descriptions/encode/` each accept a JSON object. The caller must have an active authenticated session, and the request must include the CSRF token. `source_region` is read once for the whole request (`uk`, `eu`, `us`, `au`, or `fr`; `eur` is accepted as `eu`). `items` is a list of at most 500 objects. A bad item is reported in `results` and does not reject the rest of the batch. A bad `source_region`, a bad `preferred_regions` list, or more than 500 items rejects the request.
+
+`preferred_regions` is also request-level. On decode, each size gains a `regions` list with that size converted into each preferred region. On encode, chart sizes are converted to the first preferred region before the string is built, and each used size includes the same `regions` list. Lengths move between inches and centimetres (EU and FR use centimetres). Label sizes keep their token and change wording. Chart conversion needs `age_group` and `gender` (`adult` / `child` / `baby`, and `female` / `male` / `unisex`), on the request or on the item. Pass `brand_name` as well when a brand chart should be used; a product type on its own stays on the default chart, because fashion-size requires a brand name alongside a product type.
+
+```json
+{
+  "source_region": "uk",
+  "preferred_regions": ["eu", "us"],
+  "age_group": "adult",
+  "gender": "female",
+  "items": [
+    {"value": "UK 10", "product_type": "dresses"}
+  ]
+}
+```
+
+Encode items send `sizes` instead of `value`:
+
+```json
+{
+  "source_region": "uk",
+  "preferred_regions": ["eu"],
+  "age_group": "adult",
+  "gender": "female",
+  "items": [
+    {
+      "product_type": "dresses",
+      "sizes": [{"raw": "10", "size_unit": "uk-dress-size"}]
+    }
+  ]
+}
+```
+
+The encoded `text` for that item is `EU 38`.

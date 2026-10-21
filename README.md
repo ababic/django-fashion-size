@@ -111,10 +111,10 @@ value = SizeFormField(
 `fashion_size.descriptions` can read a feed string and join sizes back into one. Two POST endpoints expose that to JavaScript and other non-Python clients. They are not mounted until you include them:
 
 ```python
-path("fashion-size/", include("django_fashion_size.urls"))
+path("api/size-descriptions/", include("django_fashion_size.urls"))
 ```
 
-`descriptions/decode/` and `descriptions/encode/` each accept a JSON object. The caller must have an active authenticated session, and the request must include the CSRF token. `source_region` is read once for the whole request (`uk`, `eu`, `us`, `au`, or `fr`; `eur` is accepted as `eu`). `items` is a list of at most 500 objects. A bad item is reported in `results` and does not reject the rest of the batch. A bad `source_region`, a bad `preferred_regions` list, or more than 500 items rejects the request.
+`POST /api/size-descriptions/decode/` and `POST /api/size-descriptions/encode/` each accept a JSON object. The caller must have an active authenticated session, and the request must include the CSRF token. `source_region` is read once for the whole request (`uk`, `eu`, `us`, `au`, or `fr`; `eur` is accepted as `eu`). `items` is a list of at most 500 objects. A bad item is reported in `results` and does not reject the rest of the batch. A bad `source_region`, a bad `preferred_regions` list, or more than 500 items rejects the request.
 
 `preferred_regions` is also request-level. On decode, each size gains a `regions` list with that size converted into each preferred region. On encode, chart sizes are converted to the first preferred region before the string is built, and each used size includes the same `regions` list. Lengths move between inches and centimetres (EU and FR use centimetres). Label sizes keep their token and change wording. Chart conversion needs `age_group` and `gender` (`adult` / `child` / `baby`, and `female` / `male` / `unisex`), on the request or on the item. Pass `brand_name` as well when a brand chart should be used; a product type on its own stays on the default chart, because fashion-size requires a brand name alongside a product type.
 

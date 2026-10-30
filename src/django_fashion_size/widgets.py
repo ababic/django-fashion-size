@@ -548,7 +548,7 @@ def _convert_entry(
         if not (size_type.family == SizeFamily.CUP_SIZE and is_cup_alpha_token(str(entered.raw))):
             try:
                 scale.row_for(entered.raw, entered.size_unit)
-            except UnknownSizeError as exc:
+            except (UnknownSizeError, InvalidOperation, ValueError) as exc:
                 raise ValidationError(_NOT_ON_CHART) from exc
     try:
         converted = entered.convert(
@@ -557,7 +557,7 @@ def _convert_entry(
             brand_name=brand_name or None,
             product_type=resolved_product_type,
         )
-    except (UnknownSizeError, MissingScaleError, IncompatibleSizeError, LengthOutOfRangeError, ValueError) as exc:
+    except (UnknownSizeError, MissingScaleError, IncompatibleSizeError, LengthOutOfRangeError, InvalidOperation, ValueError) as exc:
         raise ValidationError(length_message or _NOT_ON_CHART) from exc
     return stored_size_token(converted.size)
 
@@ -926,7 +926,7 @@ class SizeFormField(forms.CharField):
 
 
 class SizeBoundField(forms.BoundField):
-    def as_widget(self, widget: forms.Widget | None = None, attrs: dict[str, Any] | None = None, only_initial: bool = False) -> str:
+    def as_widget(self, widget: forms.Widget | None = None, attrs: dict[str, Any] | None = None, only_instance: bool = False) -> str:
         widget = widget or self.field.widget
         if isinstance(widget, SizeValueWidget) and isinstance(self.field, SizeFormField):
             widget.config = size_value_config(
@@ -937,4 +937,4 @@ class SizeBoundField(forms.BoundField):
                 widget=widget,
                 label=self.label,
             )
-        return super().as_widget(widget, attrs, only_initial)
+        return super().as_widget(widget, attrs, only_instance)

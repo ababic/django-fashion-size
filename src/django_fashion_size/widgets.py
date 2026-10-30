@@ -926,7 +926,7 @@ class SizeFormField(forms.CharField):
 
 
 class SizeBoundField(forms.BoundField):
-    def as_widget(self, widget: forms.Widget | None = None, attrs: dict[str, Any] | None = None, only_instance: bool = False) -> str:
+    def as_widget(self, widget: forms.Widget | None = None, attrs: dict[str, Any] | None = None, only_initial: bool = False) -> str:
         widget = widget or self.field.widget
         if isinstance(widget, SizeValueWidget) and isinstance(self.field, SizeFormField):
             widget.config = size_value_config(
@@ -937,4 +937,4 @@ class SizeBoundField(forms.BoundField):
                 widget=widget,
                 label=self.label,
             )
-        return super().as_widget(widget, attrs, only_instance)
+        return super().as_widget(widget, attrs, only_initial)

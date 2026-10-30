@@ -168,6 +168,43 @@ def test_off_chart_size_is_rejected() -> None:
     assert "not on the chart" in form.errors["size"][0]
 
 
+@pytest.mark.parametrize("entry_format", ["uk", "eu", "us", "au"])
+def test_alpha_shoe_size_is_kept_in_every_locale(entry_format: str) -> None:
+    form = ItemForm(
+        data={
+            "size_unit": "uk-adult-shoe-size",
+            "age_group": "adult",
+            "gender": "female",
+            "size__active": "1",
+            "size__entry": "M",
+            "size__format": entry_format,
+            "size__unit": "uk-adult-shoe-size",
+            "size__age_group": "adult",
+            "size__gender": "female",
+        }
+    )
+    assert form.is_valid(), form.errors
+    assert form.cleaned_data["size"] == ("M", UK_ADULT_SHOE_SIZE)
+
+
+def test_unrecognised_text_on_a_shoe_chart_is_rejected() -> None:
+    form = ItemForm(
+        data={
+            "size_unit": "uk-adult-shoe-size",
+            "age_group": "adult",
+            "gender": "female",
+            "size__active": "1",
+            "size__entry": "abc",
+            "size__format": "uk",
+            "size__unit": "uk-adult-shoe-size",
+            "size__age_group": "adult",
+            "size__gender": "female",
+        }
+    )
+    assert not form.is_valid()
+    assert "not on the chart" in form.errors["size"][0]
+
+
 def test_inches_posted_into_a_centimetre_field() -> None:
     form = ItemForm(
         data={

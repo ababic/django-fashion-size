@@ -45,6 +45,7 @@ from fashion_size.types import (
     length_value_in_range,
     normalize_raw,
     parse_size_unit_slug,
+    shoe_alpha_token,
     size_from_attribute_option,
     size_unit_for_length_unit,
     size_unit_for_locale,
@@ -544,8 +545,11 @@ def _convert_entry(
             if format_name == _storage_format(storage):
                 return stored_size_token(entered)
             raise ValidationError(_NOT_ON_CHART)
-        # Sports-bra alpha labels convert identically and are not chart rows.
-        if not (size_type.family == SizeFamily.CUP_SIZE and is_cup_alpha_token(str(entered.raw))):
+        # Alpha labels (sports-bra cups, shoe S/M/L) convert identically and are not chart rows.
+        alpha_label = (size_type.family == SizeFamily.CUP_SIZE and is_cup_alpha_token(str(entered.raw))) or (
+            size_type.family == SizeFamily.SHOE_SIZE and shoe_alpha_token(entered.raw) is not None
+        )
+        if not alpha_label:
             try:
                 scale.row_for(entered.raw, entered.size_unit)
             except UnknownSizeError as exc:

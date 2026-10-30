@@ -168,6 +168,24 @@ def test_off_chart_size_is_rejected() -> None:
     assert "not on the chart" in form.errors["size"][0]
 
 
+def test_non_numeric_entry_on_numeric_chart_is_rejected() -> None:
+    form = ItemForm(
+        data={
+            "size_unit": "uk-adult-shoe-size",
+            "age_group": "adult",
+            "gender": "female",
+            "size__active": "1",
+            "size__entry": "M",
+            "size__format": "uk",
+            "size__unit": "uk-adult-shoe-size",
+            "size__age_group": "adult",
+            "size__gender": "female",
+        }
+    )
+    assert not form.is_valid()
+    assert "not on the chart" in form.errors["size"][0]
+
+
 def test_inches_posted_into_a_centimetre_field() -> None:
     form = ItemForm(
         data={

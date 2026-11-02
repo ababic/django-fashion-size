@@ -31,6 +31,7 @@ from fashion_size.types import (
     IncompatibleSizeError,
     LengthOutOfRangeError,
     LetterSizeRow,
+    Locale,
     LocaleSizeRow,
     MissingScaleError,
     Size,
@@ -60,6 +61,7 @@ from django_fashion_size.model_fields import (
 
 _CHART_FORMATS = (("uk", "UK"), ("eu", "EU"), ("us", "US"), ("au", "AU"))
 _LENGTH_FORMATS = (("in", "in"), ("cm", "cm"))
+_REGION_LABELS = dict((*_CHART_FORMATS, ("fr", "FR")))
 _NOT_ON_CHART = "That size is not on the chart."
 _UNRECOGNISED_LABEL = "That size is not recognised."
 _CUSTOM_SIZE = "Choose a custom size."
@@ -109,6 +111,52 @@ def _entry_formats(size_type: SizeType) -> tuple[tuple[str, str], ...]:
     if size_type.family.french_matches_eu or size_type.family == SizeFamily.BAND_SIZE:
         return (*_CHART_FORMATS, ("fr", "FR"))
     return _CHART_FORMATS
+
+
+def _normalize_entry_region(value: Any) -> str:
+    """Region slug for a locked entry select. Blank leaves the select open."""
+    if isinstance(value, Locale):
+        slug = value.value
+    else:
+        slug = str(value or "").strip().lower().replace("_", "-")
+    if not slug:
+        return ""
+    if slug == "eur":
+        slug = "eu"
+    if slug not in _REGION_LABELS:
+        raise ValueError("entry_region must be a region (uk, eu, us, au, or fr).")
+    return slug
+
+
+def _select_formats(
+    size_type: SizeType, entry_region: str
+) -> tuple[tuple[tuple[str, str], ...], bool]:
+    """Formats shown in the region select, and whether that select is locked.
+
+    Lengths and labels have no region. A lock on a chart size leaves one
+    region; the frontend adds Custom beside it when custom values are in play,
+    and disables the select when they are not.
+    """
+    formats = _entry_formats(size_type)
+    if not entry_region or size_type.family in {SizeFamily.LABEL, SizeFamily.LENGTH}:
+        return formats, False
+    locked = tuple(item for item in formats if item[0] == entry_region)
+    if locked:
+        return locked, True
+    return ((entry_region, _REGION_LABELS[entry_region]),), True
+
+
+def _check_entry_region(size_unit: SizeUnit | None, entry_region: str) -> None:
+    """Reject a lock the fixed size unit cannot honour."""
+    if not entry_region or size_unit is None:
+        return
+    family = size_unit.size_type.family
+    if family in {SizeFamily.LABEL, SizeFamily.LENGTH}:
+        raise ValueError("entry_region applies to chart sizes, which have a region select.")
+    allowed = {value for value, _label in _entry_formats(size_unit.size_type)}
+    if entry_region not in allowed:
+        region = _REGION_LABELS[entry_region]
+        raise ValueError(f"{size_unit.size_type.label} has no {region} sizes.")
 
 
 def _label_suggestions(size_type: SizeType) -> list[dict[str, str]]:
@@ -504,6 +552,7 @@ def _convert_entry(
     gender: str,
     brand_name: BrandName | str,
     product_type: str,
+    entry_region: str = "",
 ) -> str:
     try:
         storage = next(unit for unit in SIZE_UNITS if unit.slug == unit_slug)
@@ -518,6 +567,10 @@ def _convert_entry(
         length_bounds_message(size_type) if size_type.family == SizeFamily.LENGTH else None
     )
     allowed = {value for value, _label in _entry_formats(size_type)}
+    regional = size_type.family not in {SizeFamily.LABEL, SizeFamily.LENGTH}
+    if entry_region and regional and format_name != entry_region:
+        region = _REGION_LABELS[entry_region]
+        raise ValidationError(_("Enter the size in %(region)s.") % {"region": region})
     if format_name not in allowed:
         raise ValidationError(length_message or _NOT_ON_CHART)
     try:
@@ -576,6 +629,7 @@ def posted_size_token(
     data: Any,
     name: str,
     custom_values: tuple[str, ...] = (),
+    entry_region: str = "",
 ) -> str | _InvalidEntry:
     """Storage token from the autocomplete, or the plain input when script is off."""
     if str(data.get(f"{name}__active") or "") != "1":
@@ -601,6 +655,7 @@ def posted_size_token(
             gender=str(data.get(f"{name}__gender") or "").strip().lower(),
             brand_name=str(data.get(f"{name}__brand") or "").strip(),
             product_type=_product_type_slug(data.get(f"{name}__product_type")),
+            entry_region=entry_region,
         )
     except ValidationError as exc:
         message = exc.messages[0] if exc.messages else _NOT_ON_CHART
@@ -666,6 +721,7 @@ def size_value_config(
             )
         scale, brand_chart = (None, None) if is_label else scales[key]
         formats = _entry_formats(size_unit.size_type)
+        select_formats, format_locked = _select_formats(size_unit.size_type, widget.entry_region)
         chart_key = ""
         if scale is not None:
             chart_key = key
@@ -689,7 +745,8 @@ def size_value_config(
             "storage_format": _storage_format(size_unit),
             "storage_measurement": size_unit.slug,
             "format_side": "right" if _is_length_size(size_unit) else "left",
-            "formats": [{"value": value, "label": format_label} for value, format_label in formats],
+            "formats": [{"value": value, "label": format_label} for value, format_label in select_formats],
+            "format_locked": format_locked,
             "length": _is_length_size(size_unit),
         }
         if measurement["length"]:
@@ -767,6 +824,7 @@ class SizeValueWidget(forms.Widget):
         product_type_name: str | None = None,
         choices: list[str] | None = None,
         custom_values: list[str] | None = None,
+        entry_region: Locale | str | None = None,
     ) -> None:
         self.age_group = age_group
         self.gender = gender
@@ -777,6 +835,8 @@ class SizeValueWidget(forms.Widget):
         self.product_type_name = product_type_name
         self.choices = choices
         self.custom_values = _normalize_custom_values(custom_values)
+        self.entry_region = _normalize_entry_region(entry_region)
+        _check_entry_region(self.size_unit, self.entry_region)
         self.config: dict[str, Any] = {}
         super().__init__(attrs)
 
@@ -787,7 +847,7 @@ class SizeValueWidget(forms.Widget):
     def value_from_datadict(
         self, data: Any, files: Any, name: str
     ) -> tuple[str, SizeUnit | None] | _InvalidEntry:
-        parsed = posted_size_token(data, name, self.custom_values)
+        parsed = posted_size_token(data, name, self.custom_values, self.entry_region)
         if isinstance(parsed, _InvalidEntry):
             return parsed
         if str(data.get(f"{name}__active") or "") != "1":
@@ -816,9 +876,14 @@ class SizeValueWidget(forms.Widget):
         rendered_input = forms.TextInput().render(name, token, input_attrs, renderer)
         initial_unit = str(config.get("initialUnit") or "")
         measurement = (config.get("units") or {}).get(initial_unit, {}).get("measurement") or {}
+        shown = measurement.get("formats") or []
+        if measurement.get("format_locked") and shown:
+            initial_format = shown[0]["value"]
+        else:
+            initial_format = measurement.get("storage_format", "")
         hidden_values = {
             "entry": token,
-            "format": measurement.get("storage_format", ""),
+            "format": initial_format,
             "unit": initial_unit,
             "age_group": config.get("ageGroup", ""),
             "gender": config.get("gender", ""),
@@ -854,6 +919,15 @@ class SizeFormField(forms.CharField):
     ``custom_values`` — those values are not sizes and do not convert.
     Pass ``custom_values`` to add a Custom option to the linked size-unit
     select (or to the region select when the unit is fixed on this field).
+
+    ``entry_region`` locks the region the user types in (``uk``, ``eu``,
+    ``us``, ``au``, or ``fr``). The stored token is still this field's size
+    unit. Suggestions stay on that region even when the control cannot be
+    changed. With custom values on the region select, that select stays
+    editable and lists only the locked region and Custom; choosing Custom
+    limits suggestions to those values. Without them, the region is shown
+    and cannot be changed. Length and label units have no region list, so
+    the lock does not apply to them.
     """
 
     def __init__(
@@ -868,6 +942,7 @@ class SizeFormField(forms.CharField):
         age_group: str | None = None,
         gender: str | None = None,
         custom_values: list[str] | None = None,
+        entry_region: Locale | str | None = None,
         **kwargs: Any,
     ) -> None:
         self.size_unit_field = size_unit_field
@@ -887,6 +962,9 @@ class SizeFormField(forms.CharField):
                 widget.gender = gender
             if custom_values is not None:
                 widget.custom_values = _normalize_custom_values(custom_values)
+            if entry_region is not None:
+                widget.entry_region = _normalize_entry_region(entry_region)
+            _check_entry_region(widget.size_unit, widget.entry_region)
         super().__init__(*args, **kwargs)
 
     def _token_and_unit(self, value: Any) -> tuple[str, SizeUnit | None]:

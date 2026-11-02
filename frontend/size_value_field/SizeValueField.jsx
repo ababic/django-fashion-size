@@ -6,14 +6,15 @@ import { convertLength } from "./length.js";
 const suggestionCache = new Map();
 
 function defaultFormat(measurement, context) {
+  const formats = measurement.formats || [];
   const fromBrand = context?.formats?.[measurement.kind];
-  if (
-    fromBrand &&
-    measurement.formats.some((item) => item.value === fromBrand)
-  ) {
+  if (fromBrand && formats.some((item) => item.value === fromBrand)) {
     return fromBrand;
   }
-  return measurement.storage_format;
+  if (formats.some((item) => item.value === measurement.storage_format)) {
+    return measurement.storage_format;
+  }
+  return formats[0]?.value || measurement.storage_format;
 }
 
 const CUSTOM_FORMAT = "custom";
@@ -628,13 +629,21 @@ export function SizeValueField({
   }, [text, format, onEntry]);
 
   const side = measurement.format_side === "right" ? "right" : "left";
+  const regionLocked = Boolean(measurement.format_locked) && formats.length < 2;
+  const selectedFormat = formats.some((item) => item.value === format)
+    ? format
+    : formats[0]?.value || format;
   const formatSelect =
-    formats.length > 1 ? (
+    formats.length > 1 || regionLocked ? (
       <select
         className="size-value__format"
-        value={format}
-        disabled={disabled}
-        aria-label={`${measurement.label} format`}
+        value={selectedFormat}
+        disabled={disabled || regionLocked}
+        aria-label={
+          regionLocked
+            ? `${measurement.label}, ${formats[0]?.label || ""}`
+            : `${measurement.label} format`
+        }
         onChange={(event) => {
           selectFormat(event.target.value);
         }}
@@ -665,7 +674,11 @@ export function SizeValueField({
           aria-autocomplete="list"
           aria-expanded={open}
           aria-controls={listId}
-          aria-label={ariaLabel || measurement.label}
+          aria-label={
+            regionLocked
+              ? `${ariaLabel || measurement.label}, ${formats[0]?.label || ""}`
+              : ariaLabel || measurement.label
+          }
           placeholder={measurement.label}
           value={text}
           disabled={disabled}

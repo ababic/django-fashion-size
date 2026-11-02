@@ -108,6 +108,7 @@ def test_waist_size_keeps_the_region_select() -> None:
     assert measurement["storage_format"] == "uk"
     assert measurement["format_side"] == "left"
     assert [item["value"] for item in measurement["formats"]] == ["uk", "eu", "us", "au"]
+    assert measurement["format_locked"] is False
 
 
 def test_widget_is_an_autocomplete_not_a_size_select() -> None:
@@ -648,6 +649,184 @@ def test_sleeve_and_inside_leg_use_their_own_bounds() -> None:
     )
     assert not rejected.is_valid()
     assert "2 to 42" in rejected.errors["size"][0]
+
+
+class LockedRegionForm(forms.Form):
+    """Chart entry is EU only. The column still stores the UK token."""
+
+    value = SizeFormField(
+        size_unit="uk-dress-size",
+        entry_region="eu",
+        age_group="adult",
+        gender="female",
+    )
+
+
+class LockedCustomForm(forms.Form):
+    """Custom stays on the region select, beside the locked region."""
+
+    value = SizeFormField(
+        size_unit=UK_ADULT_SHOE_SIZE,
+        custom_values=["One Size"],
+        entry_region="EUR",
+        age_group="adult",
+        gender="female",
+        brand_name="Dune London",
+        product_type_name="Shoes",
+    )
+
+
+class LockedLinkedForm(forms.Form):
+    """Custom lives on the size-unit select, so the region select stays fixed."""
+
+    size_unit = SizeUnitField(allow_custom=True).formfield()
+    value = SizeFormField(
+        size_unit_field="size_unit",
+        custom_values=["One Size"],
+        entry_region="eu",
+        age_group="adult",
+        gender="female",
+    )
+
+
+def test_entry_region_locks_the_region_select() -> None:
+    form = LockedRegionForm(initial={"value": "10"})
+    config = _config(form, "value")
+    measurement = config["units"]["uk-dress-size"]["measurement"]
+    assert measurement["format_locked"] is True
+    assert measurement["storage_format"] == "uk"
+    assert [item["value"] for item in measurement["formats"]] == ["eu"]
+    assert [item["input"] for item in config["units"]["uk-dress-size"]["values"]["eu"] if item["stored"] == "10"] == ["38"]
+    assert [column["key"] for column in config["charts"]["dress"]["columns"]] == ["uk", "eu", "us", "au", "fr"]
+    html = str(form["value"])
+    assert 'name="value__format" value="eu"' in html
+    assert 'name="value__entry" value="10"' in html
+
+
+def test_entry_region_converts_that_region_and_rejects_others() -> None:
+    posted = LockedRegionForm(
+        data={
+            "value__active": "1",
+            "value__entry": "38",
+            "value__format": "eu",
+            "value__unit": "uk-dress-size",
+            "value__age_group": "adult",
+            "value__gender": "female",
+        }
+    )
+    assert posted.is_valid(), posted.errors
+    assert posted.cleaned_data["value"] == ("10", SIZE_UNIT_BY_SLUG["uk-dress-size"])
+    rejected = LockedRegionForm(
+        data={
+            "value__active": "1",
+            "value__entry": "10",
+            "value__format": "uk",
+            "value__unit": "uk-dress-size",
+            "value__age_group": "adult",
+            "value__gender": "female",
+        }
+    )
+    assert not rejected.is_valid()
+    assert "Enter the size in EU." in rejected.errors["value"][0]
+
+
+def test_custom_values_keep_the_locked_region_editable() -> None:
+    form = LockedCustomForm()
+    config = _config(form, "value")
+    measurement = config["units"]["uk-adult-shoe-size"]["measurement"]
+    assert measurement["format_locked"] is True
+    assert [item["value"] for item in measurement["formats"]] == ["eu"]
+    assert config["customValues"] == ["One Size"]
+    assert config["sizeUnitField"] == ""
+    eu_inputs = [item["input"] for item in config["units"]["uk-adult-shoe-size"]["values"]["eu"]]
+    assert eu_inputs
+    assert "One Size" not in eu_inputs
+    assert config["units"]["custom"]["values"]["custom"] == [
+        {"input": "One Size", "stored": "One Size"},
+    ]
+    posted = LockedCustomForm(
+        data={
+            "value__active": "1",
+            "value__entry": "one size",
+            "value__format": "custom",
+            "value__unit": "uk-adult-shoe-size",
+            "value__age_group": "adult",
+            "value__gender": "female",
+            "value__brand": "Dune London",
+            "value__product_type": "Shoes",
+        }
+    )
+    assert posted.is_valid(), posted.errors
+    assert posted.cleaned_data["value"] == ("One Size", None)
+    charted = LockedCustomForm(
+        data={
+            "value__active": "1",
+            "value__entry": "38",
+            "value__format": "eu",
+            "value__unit": "uk-adult-shoe-size",
+            "value__age_group": "adult",
+            "value__gender": "female",
+            "value__brand": "Dune London",
+            "value__product_type": "Shoes",
+        }
+    )
+    assert charted.is_valid(), charted.errors
+    assert charted.cleaned_data["value"] == ("5", UK_ADULT_SHOE_SIZE)
+
+
+def test_linked_custom_values_leave_the_region_select_fixed() -> None:
+    form = LockedLinkedForm(initial={"size_unit": "uk-dress-size"})
+    config = _config(form, "value")
+    measurement = config["units"]["uk-dress-size"]["measurement"]
+    assert config["sizeUnitField"] == "size_unit"
+    assert config["customValues"] == ["One Size"]
+    assert measurement["format_locked"] is True
+    assert [item["value"] for item in measurement["formats"]] == ["eu"]
+    length = config["units"]["in-shorts-inseam"]["measurement"]
+    assert length["format_locked"] is False
+    assert [item["value"] for item in length["formats"]] == ["in", "cm"]
+    posted = LockedLinkedForm(
+        data={
+            "size_unit": "cm-shorts-inseam",
+            "value__active": "1",
+            "value__entry": "10",
+            "value__format": "in",
+            "value__unit": "cm-shorts-inseam",
+            "value__age_group": "adult",
+            "value__gender": "female",
+        }
+    )
+    assert posted.is_valid(), posted.errors
+    assert posted.cleaned_data["value"] == ("25.4", SIZE_UNIT_BY_SLUG["cm-shorts-inseam"])
+
+
+def test_entry_region_on_the_widget_is_kept() -> None:
+    form = forms.Form()
+    form.fields["value"] = SizeFormField(
+        size_unit="uk-dress-size",
+        age_group="adult",
+        gender="female",
+        widget=SizeValueWidget(entry_region="us"),
+    )
+    measurement = _config(form, "value")["units"]["uk-dress-size"]["measurement"]
+    assert [item["value"] for item in measurement["formats"]] == ["us"]
+    overridden = SizeFormField(
+        size_unit="uk-dress-size",
+        age_group="adult",
+        gender="female",
+        entry_region="au",
+        widget=SizeValueWidget(entry_region="us"),
+    )
+    assert overridden.widget.entry_region == "au"
+
+
+def test_entry_region_must_be_a_region_the_size_supports() -> None:
+    with pytest.raises(ValueError, match="uk, eu, us, au, or fr"):
+        SizeFormField(size_unit="uk-dress-size", entry_region="inches")
+    with pytest.raises(ValueError, match="no FR sizes"):
+        SizeFormField(size_unit="uk-waist-size", entry_region="fr")
+    with pytest.raises(ValueError, match="chart sizes"):
+        SizeFormField(size_unit="in-shorts-inseam", entry_region="eu")
 
 
 def test_model_field_uses_the_autocomplete_widget() -> None:

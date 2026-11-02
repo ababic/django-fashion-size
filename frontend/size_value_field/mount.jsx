@@ -24,13 +24,26 @@ function writeField(mount, name, value) {
 function bundlesFor(unit, charts) {
   const chart = unit.chartKey ? charts?.[unit.chartKey] || null : null;
   const bundles = {};
-  unit.measurement.formats.forEach((item) => {
-    bundles[item.value] = {
-      values: unit.values?.[item.value] || [],
+  // Keep the storage format when the select is locked to another region, so a
+  // saved token is still recognised and is not treated as a custom value.
+  const names = new Set(unit.measurement.formats.map((item) => item.value));
+  if (unit.measurement.storage_format) {
+    names.add(unit.measurement.storage_format);
+  }
+  names.forEach((value) => {
+    bundles[value] = {
+      values: unit.values?.[value] || [],
       chart,
     };
   });
   return bundles;
+}
+
+function postedFormat(measurement) {
+  if (measurement?.format_locked && measurement.formats?.length) {
+    return measurement.formats[0].value;
+  }
+  return measurement?.storage_format || "";
 }
 
 function isCustomToken(customValues, value) {
@@ -120,7 +133,7 @@ function renderMount(mount) {
   const startingUnit = currentUnit();
   const unitNow = config.units?.[startingUnit] || null;
   writeField(mount, "entry", input.value);
-  writeField(mount, "format", unitNow?.measurement?.storage_format || "");
+  writeField(mount, "format", postedFormat(unitNow?.measurement));
   writeField(mount, "unit", startingUnit || "");
   writeField(mount, "active", "1");
   writeField(mount, "age-group", config.ageGroup || "");
@@ -162,7 +175,7 @@ function renderMount(mount) {
       return;
     }
     writeField(mount, "entry", input.value);
-    writeField(mount, "format", unit.measurement?.storage_format || "");
+    writeField(mount, "format", postedFormat(unit.measurement));
     writeField(mount, "unit", unitSlug);
     mount.classList.add("is-ready");
     input.hidden = true;

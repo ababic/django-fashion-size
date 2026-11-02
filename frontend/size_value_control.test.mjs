@@ -270,6 +270,8 @@ test("selection select lists values and keeps the stored token across regions", 
   );
   assert.equal(view.input(), null);
   const menu = view.host.querySelector("select.size-value__menu");
+  assert.equal(menu.options[0].value, "");
+  assert.equal(menu.options[0].text, "---");
   assert.equal(menu.value, "10");
   const format = view.host.querySelector("select.size-value__format");
   await act(async () => {
@@ -303,6 +305,8 @@ test("unavailable values are shown with a suffix and cannot be chosen", async ()
     })
   );
   const menu = view.host.querySelector("select.size-value__menu");
+  assert.equal(menu.value, "");
+  assert.equal(menu.options[0].text, "---");
   const options = [...menu.options].map((option) => ({
     value: option.value,
     text: option.text,

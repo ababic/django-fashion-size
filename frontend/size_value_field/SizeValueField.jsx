@@ -803,7 +803,7 @@ export function SizeValueField({
               commit(item);
             }}
           >
-            <option value=""></option>
+            <option value="">---</option>
             {values.map((item) => (
               <option
                 key={item.input}

@@ -80,6 +80,10 @@ function BoundSize({ mount, input, config, unitSlug, customValues, customLabel }
       customValues={customValues}
       customLabel={customLabel}
       showChartLink={config.showChartLink !== false}
+      selection={config.selection || "autocomplete"}
+      unavailable={unit.unavailable || config.unavailable || []}
+      unavailableSuffix={config.unavailableSuffix || " (n/a)"}
+      unavailableMessage={config.unavailableMessage || "That size is not available."}
       onChange={onChange}
       onEntry={onEntry}
     />

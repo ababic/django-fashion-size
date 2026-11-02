@@ -653,7 +653,9 @@ class SizeField(models.CharField):
     value (with a ``Demographic`` from ``fashion_size``). Writing a
     ``Size``, a number, or a size token stores the raw token
     (``10``, ``7.5``, ``DD``). ``show_chart_link=False`` hides the conversion
-    chart link on the form control.
+    chart link on the form control. ``selection="select"`` uses a dropdown
+    of the size values. ``unavailable`` lists stored tokens that stay visible
+    with an `` (n/a)`` suffix and cannot be chosen.
     """
 
     def __init__(
@@ -661,10 +663,20 @@ class SizeField(models.CharField):
         *args: Any,
         size_unit_field: str,
         show_chart_link: bool = True,
+        selection: str = "autocomplete",
+        unavailable: list[str] | None = None,
         **kwargs: Any,
     ) -> None:
+        # Local import: widgets already imports this module.
+        from django_fashion_size.widgets import (
+            _normalize_selection,
+            _normalize_unavailable,
+        )
+
         self.size_unit_field = _size_unit_field_path(size_unit_field)
         self.show_chart_link = bool(show_chart_link)
+        self.selection = _normalize_selection(selection)
+        self.unavailable = _normalize_unavailable(unavailable)
         kwargs.setdefault("max_length", 32)
         kwargs.setdefault("blank", True)
         kwargs.setdefault("default", "")
@@ -681,6 +693,10 @@ class SizeField(models.CharField):
         kwargs["size_unit_field"] = self.size_unit_field
         if self.show_chart_link is False:
             kwargs["show_chart_link"] = False
+        if self.selection != "autocomplete":
+            kwargs["selection"] = self.selection
+        if self.unavailable:
+            kwargs["unavailable"] = list(self.unavailable)
         return name, path, args, kwargs
 
     def contribute_to_class(
@@ -756,4 +772,8 @@ class SizeField(models.CharField):
             kwargs["size_unit_field"] = self.size_unit_field
             if self.show_chart_link is False:
                 kwargs.setdefault("show_chart_link", False)
+            if self.selection != "autocomplete":
+                kwargs.setdefault("selection", self.selection)
+            if self.unavailable:
+                kwargs.setdefault("unavailable", list(self.unavailable))
         return super().formfield(**kwargs)

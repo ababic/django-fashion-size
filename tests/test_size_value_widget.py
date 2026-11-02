@@ -22,13 +22,18 @@ if not settings.configured:
 
 from django.db import models
 
+from fashion_size.scales import shoe_attribute_values
 from fashion_size.types import (
     CM_CHEST_SIZE,
+    SHOE_ALPHA_ORDER,
     SIZE_UNIT_BY_SLUG,
     SIZE_UNITS,
     Size,
     UK_ADULT_SHOE_SIZE,
     UK_KIDS_SHOE_SIZE,
+    format_raw,
+    size_type_from_slug,
+    size_unit_for_locale,
 )
 
 from django_fashion_size import (
@@ -359,6 +364,187 @@ def _cup_form(**data: str) -> ItemForm:
     }
     payload.update(data)
     return ItemForm(data=payload)
+
+
+def _gamut_labels(size_unit: object, age_group: str, gender: str) -> list[str]:
+    labels: list[str] = []
+    for raw in shoe_attribute_values(size_unit, age_group=age_group, gender=gender):
+        labels.append(raw if isinstance(raw, str) else format_raw(raw))
+    return labels
+
+
+@pytest.mark.parametrize("locale", ["uk", "eu", "us", "au", "fr"])
+@pytest.mark.parametrize(
+    ("kind", "age_group", "gender"),
+    [
+        ("adult-shoe", "adult", "female"),
+        ("adult-shoe", "adult", "male"),
+        ("kids-shoe", "child", "male"),
+        ("baby-shoe", "baby", "female"),
+    ],
+)
+def test_each_shoe_unit_lists_the_full_gamut(kind: str, age_group: str, gender: str, locale: str) -> None:
+    storage = size_unit_for_locale(size_type_from_slug(kind), "uk")
+    entry = size_unit_for_locale(storage.size_type, locale)
+    config = build_size_value_config(
+        size_unit=storage,
+        age_group=age_group,
+        gender=gender,
+    )
+    values = config["units"][storage.slug]["values"][locale]
+    labels = [item["input"] for item in values]
+    expected = _gamut_labels(entry, age_group, gender)
+    assert labels[-len(SHOE_ALPHA_ORDER) :] == list(SHOE_ALPHA_ORDER)
+    assert set(labels) == set(expected)
+    assert len(labels) == len(expected)
+    for token in SHOE_ALPHA_ORDER:
+        match = next(item for item in values if item["input"] == token)
+        assert match["stored"] == token
+    chart_tokens = {cell for row in config["charts"][kind]["rows"] for cell in row.values()}
+    assert set(SHOE_ALPHA_ORDER).isdisjoint(chart_tokens)
+
+
+def test_brand_shoe_chart_still_lists_alpha_labels() -> None:
+    config = build_size_value_config(
+        size_unit="uk-adult-shoe-size",
+        age_group="adult",
+        gender="female",
+        brand_name="Dune London",
+        product_type_name="shoes",
+    )
+    assert config["charts"]["adult-shoe"]["origin"] == "brand"
+    labels = [item["input"] for item in config["units"]["uk-adult-shoe-size"]["values"]["uk"]]
+    assert labels[-len(SHOE_ALPHA_ORDER) :] == list(SHOE_ALPHA_ORDER)
+    medium = next(item for item in config["units"]["uk-adult-shoe-size"]["values"]["eu"] if item["input"] == "M")
+    assert medium["stored"] == "M"
+
+
+def test_selection_select_is_config_and_lengths_stay_open() -> None:
+    shoes = build_size_value_config(
+        size_unit="uk-adult-shoe-size",
+        age_group="adult",
+        gender="female",
+        selection="select",
+    )
+    assert shoes["selection"] == "select"
+    assert shoes["units"]["uk-adult-shoe-size"]["measurement"]["closed"] is True
+    default = build_size_value_config(
+        size_unit="uk-dress-size",
+        age_group="adult",
+        gender="female",
+    )
+    assert default["selection"] == "autocomplete"
+    assert default["units"]["uk-dress-size"]["measurement"]["closed"] is True
+    length = build_size_value_config(size_unit="in-shorts-inseam", selection="select")
+    assert length["units"]["in-shorts-inseam"]["measurement"]["closed"] is False
+    assert length["units"]["in-shorts-inseam"]["measurement"]["length"] is True
+    age = build_size_value_config(size_unit="age-months", selection="select")
+    assert age["units"]["age-months"]["measurement"]["closed"] is False
+    with pytest.raises(ValueError, match="selection"):
+        build_size_value_config(size_unit="uk-dress-size", selection="menu")
+
+
+def test_unavailable_sizes_are_marked_in_every_region_and_rejected() -> None:
+    config = build_size_value_config(
+        size_unit="uk-adult-shoe-size",
+        age_group="adult",
+        gender="female",
+        selection="select",
+        unavailable=["medium", "L"],
+    )
+    assert config["unavailableSuffix"] == " (n/a)"
+    assert "M" in config["units"]["uk-adult-shoe-size"]["unavailable"]
+    assert "L" in config["units"]["uk-adult-shoe-size"]["unavailable"]
+    for values in config["units"]["uk-adult-shoe-size"]["values"].values():
+        medium = next(item for item in values if item["input"] == "M")
+        large = next(item for item in values if item["input"] == "L")
+        kept = next(item for item in values if item["input"] == "5" or item["stored"] == "5")
+        assert medium["unavailable"] is True
+        assert medium["stored"] == "M"
+        assert large["unavailable"] is True
+        assert "unavailable" not in kept
+    letter = build_size_value_config(size_unit="letter", unavailable=["small"])
+    small = next(item for item in letter["units"]["letter"]["values"]["letter"] if item["stored"] == "S")
+    assert small["unavailable"] is True
+    one = next(item for item in letter["units"]["letter"]["values"]["letter"] if item["stored"] == "ONE")
+    assert "unavailable" not in one
+
+    class UnavailableShoeForm(forms.Form):
+        value = SizeFormField(
+            size_unit=UK_ADULT_SHOE_SIZE,
+            age_group="adult",
+            gender="female",
+            selection="select",
+            unavailable=["medium", "L"],
+        )
+
+    form = UnavailableShoeForm()
+    embedded = _config(form, "value")
+    assert embedded["selection"] == "select"
+    rejected = UnavailableShoeForm(
+        data={
+            "value__active": "1",
+            "value__entry": "M",
+            "value__format": "uk",
+            "value__unit": "uk-adult-shoe-size",
+            "value__age_group": "adult",
+            "value__gender": "female",
+        }
+    )
+    assert not rejected.is_valid()
+    assert "not available" in rejected.errors["value"][0]
+    alias = UnavailableShoeForm(
+        data={
+            "value__active": "1",
+            "value__entry": "large",
+            "value__format": "eu",
+            "value__unit": "uk-adult-shoe-size",
+            "value__age_group": "adult",
+            "value__gender": "female",
+        }
+    )
+    assert not alias.is_valid()
+    assert "not available" in alias.errors["value"][0]
+    class TokenOnlyForm(forms.Form):
+        value = SizeFormField(
+            size_unit=UK_ADULT_SHOE_SIZE,
+            age_group="adult",
+            gender="female",
+            unavailable=["M"],
+        )
+
+    typed = TokenOnlyForm(data={"value": "medium"})
+    assert not typed.is_valid()
+    assert "not available" in typed.errors["value"][0]
+    allowed = UnavailableShoeForm(
+        data={
+            "value__active": "1",
+            "value__entry": "5",
+            "value__format": "uk",
+            "value__unit": "uk-adult-shoe-size",
+            "value__age_group": "adult",
+            "value__gender": "female",
+        }
+    )
+    assert allowed.is_valid(), allowed.errors
+    assert allowed.cleaned_data["value"] == ("5", UK_ADULT_SHOE_SIZE)
+
+
+def test_size_field_passes_selection_and_unavailable() -> None:
+    field = SizeField(
+        size_unit_field="size_unit",
+        selection="select",
+        unavailable=["M", "L"],
+    )
+    assert field.deconstruct()[3]["selection"] == "select"
+    assert field.deconstruct()[3]["unavailable"] == ["M", "L"]
+    plain = SizeField(size_unit_field="size_unit")
+    assert "selection" not in plain.deconstruct()[3]
+    assert "unavailable" not in plain.deconstruct()[3]
+    form_field = field.formfield()
+    assert isinstance(form_field, SizeFormField)
+    assert form_field.widget.selection == "select"
+    assert form_field.widget.unavailable == ("M", "L")
 
 
 def test_cup_suggestions_append_alpha_labels_after_the_letter_chart() -> None:

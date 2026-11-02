@@ -8,6 +8,9 @@ import { SizeValueField } from "./SizeValueField";
  *
  * ``onChange`` receives the stored token and the entry that produced it.
  * ``unit`` overrides ``config.initialUnit`` when the host switches units.
+ * ``selection`` is ``autocomplete`` or ``select`` (a dropdown of the same
+ * values). ``unavailable`` lists stored tokens that stay visible with an
+ * `` (n/a)`` suffix and cannot be chosen.
  */
 export function SizeValueControl({
   config,
@@ -15,6 +18,8 @@ export function SizeValueControl({
   unit,
   disabled = false,
   showChartLink,
+  selection,
+  unavailable,
   onChange,
 }) {
   const unitSlug = unit || config?.initialUnit || "";
@@ -47,6 +52,10 @@ export function SizeValueControl({
       customValues={customValues}
       customLabel={config.customLabel || "Custom"}
       showChartLink={chartLink}
+      selection={selection || config?.selection || "autocomplete"}
+      unavailable={unavailable ?? selected.unavailable ?? config?.unavailable ?? []}
+      unavailableSuffix={config?.unavailableSuffix || " (n/a)"}
+      unavailableMessage={config?.unavailableMessage || "That size is not available."}
       onChange={report}
     />
   );

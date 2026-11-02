@@ -96,6 +96,8 @@ self.fields["value"] = SizeFormField(
 )
 ```
 
+Pass `entry_region` (`uk`, `eu`, `us`, `au`, or `fr`; `eur` is accepted as `eu`) to lock the region the user types in. The value saved is still the token in the field's size unit, so an EU entry can store a UK size. Suggestions follow that region, including when the region control cannot be changed. When `custom_values` are on that region select, it stays editable and lists only the locked region and Custom. Choosing Custom limits suggestions to those custom values. Without custom values, the region is shown and cannot be changed. Length and label units have no region list, so `entry_region` does not apply to them. A chart size that has no such region (waist has no FR) is rejected when the size unit is fixed on the field.
+
 Leave those values unset to read them from other fields. A `SizeField` still passes its `size_unit_field`. `brand_name_field` defaults to `brand`, and `product_type_name_field` defaults to `product_type`. Point them at other names when the form uses those:
 
 ```python

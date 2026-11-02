@@ -79,6 +79,15 @@
   text-transform: uppercase;
 }
 
+.size-value__format:disabled {
+  cursor: default;
+  opacity: 1;
+  color: #334155 !important;
+  background-color: #f3f5f8 !important;
+  background-image: none !important;
+  padding-right: 0.55rem !important;
+}
+
 .size-value--left .size-value__format {
   border-right: 1px solid #e2e8f0 !important;
 }

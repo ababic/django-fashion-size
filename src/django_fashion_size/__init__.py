@@ -31,7 +31,11 @@ from django_fashion_size.model_fields import (
     SizeUnitField,
     SizeUnitFormField,
 )
-from django_fashion_size.widgets import SizeFormField, SizeValueWidget
+from django_fashion_size.widgets import (
+    SizeFormField,
+    SizeValueWidget,
+    build_size_value_config,
+)
 
 
 def _display_for_active_language(size: Size) -> str:
@@ -57,4 +61,5 @@ __all__ = [
     "SizeUnitFormField",
     "SizeUnitSlug",
     "SizeValueWidget",
+    "build_size_value_config",
 ]

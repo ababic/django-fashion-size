@@ -38,6 +38,7 @@ exclude = ["/frontend"]
 artifacts = [
     "src/django_fashion_size/static/django_fashion_size/size_value_field.css",
     "src/django_fashion_size/static/django_fashion_size/size_value_field.js",
+    "src/django_fashion_size/static/django_fashion_size/size-value-field.js",
 ]
 
 [tool.pytest.ini_options]

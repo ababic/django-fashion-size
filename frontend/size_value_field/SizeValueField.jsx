@@ -100,6 +100,18 @@ function listedCustom(customValues, token) {
   );
 }
 
+function adoptedToken(measurement, bundles, customValues, token) {
+  const stored = token || "";
+  const custom =
+    !measurement.custom &&
+    Boolean(listedCustom(customValues, stored)) &&
+    !onStorageChart(bundles, measurement, stored);
+  if (custom) {
+    return { stored: listedCustom(customValues, stored), custom: true };
+  }
+  return { stored, custom: false };
+}
+
 function onStorageChart(bundles, measurement, token) {
   const list = bundles?.[measurement.storage_format]?.values || [];
   return list.some((item) => item.stored === token);
@@ -216,6 +228,7 @@ export function SizeValueField({
   ariaLabel,
   customValues,
   customLabel,
+  showChartLink = true,
   onChange,
   onEntry,
 }) {
@@ -295,8 +308,37 @@ export function SizeValueField({
   }, [measurement, format, context, choices, bundles, customValues]);
 
   useEffect(() => {
+    if (!showChartLink) {
+      setChartOpen(false);
+    }
+  }, [showChartLink]);
+
+  useEffect(() => {
+    // A parent can replace the stored token after mount. Leave an in-progress
+    // edit alone; otherwise the cell has to follow the new token.
     if (focused.current) {
       return;
+    }
+    const incoming = adoptedToken(measurement, bundles, customValues, storedValue);
+    if (storedRef.current !== incoming.stored) {
+      storedRef.current = incoming.stored;
+      setResolveError("");
+      if (incoming.custom) {
+        customStash.current = incoming.stored;
+        if (format !== CUSTOM_FORMAT) {
+          setFormat(CUSTOM_FORMAT);
+          return;
+        }
+      } else if (format === CUSTOM_FORMAT && !measurement.custom) {
+        unitToken.current = incoming.stored;
+        const next = defaultFormat(measurement, context);
+        if (next !== format) {
+          setFormat(next);
+          return;
+        }
+      } else {
+        unitToken.current = incoming.stored;
+      }
     }
     if (format === CUSTOM_FORMAT) {
       const stored = storedRef.current;
@@ -327,7 +369,7 @@ export function SizeValueField({
       return;
     }
     setText(stored || "");
-  }, [storedValue, values, format, measurement]);
+  }, [storedValue, values, format, measurement, bundles, customValues, context]);
 
   const query = text.trim();
   const matches = useMemo(
@@ -389,8 +431,9 @@ export function SizeValueField({
     } else {
       unitToken.current = token;
     }
-    onChange(token);
-    onEntry?.({ text: entryText, format: entryFormat });
+    const entry = { text: entryText ?? "", format: entryFormat };
+    onEntry?.(entry);
+    onChange?.(token, entry);
   };
 
   const displayFor = (stored, nextFormat) => {
@@ -427,23 +470,24 @@ export function SizeValueField({
     if (format === CUSTOM_FORMAT) {
       customStash.current = text;
       const restored = unitToken.current || "";
-      storedRef.current = restored;
-      setText(displayFor(restored, next));
+      const nextText = displayFor(restored, next);
+      setText(nextText);
       setFormat(next);
-      onChange(restored);
+      publish(restored, nextText, next);
       return;
     }
     if (next === CUSTOM_FORMAT) {
       unitToken.current = storedRef.current || "";
       const restored = customStash.current || "";
-      storedRef.current = restored;
-      customStash.current = restored;
       setText(restored);
       setFormat(next);
-      onChange(restored);
+      publish(restored, restored, next);
       return;
     }
+    const nextText = displayFor(storedRef.current, next);
+    setText(nextText);
     setFormat(next);
+    publish(storedRef.current, nextText, next);
   };
 
   const commit = (item, { focus = false } = {}) => {
@@ -706,7 +750,7 @@ export function SizeValueField({
         />
         {side === "right" ? formatSelect : null}
       </div>
-      {chart ? (
+      {showChartLink && chart ? (
         <button
           ref={linkRef}
           type="button"
@@ -767,7 +811,7 @@ export function SizeValueField({
             document.body
           )
         : null}
-      {chartOpen && chart && chartBox
+      {showChartLink && chartOpen && chart && chartBox
         ? createPortal(
             <div
               className="size-value__chart-popover"

@@ -652,11 +652,19 @@ class SizeField(models.CharField):
     returns a ``Size``; call ``.convert()`` or ``.convert_to_locale()`` on that
     value (with a ``Demographic`` from ``fashion_size``). Writing a
     ``Size``, a number, or a size token stores the raw token
-    (``10``, ``7.5``, ``DD``).
+    (``10``, ``7.5``, ``DD``). ``show_chart_link=False`` hides the conversion
+    chart link on the form control.
     """
 
-    def __init__(self, *args: Any, size_unit_field: str, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *args: Any,
+        size_unit_field: str,
+        show_chart_link: bool = True,
+        **kwargs: Any,
+    ) -> None:
         self.size_unit_field = _size_unit_field_path(size_unit_field)
+        self.show_chart_link = bool(show_chart_link)
         kwargs.setdefault("max_length", 32)
         kwargs.setdefault("blank", True)
         kwargs.setdefault("default", "")
@@ -671,6 +679,8 @@ class SizeField(models.CharField):
         if kwargs.get("default") == "":
             del kwargs["default"]
         kwargs["size_unit_field"] = self.size_unit_field
+        if self.show_chart_link is False:
+            kwargs["show_chart_link"] = False
         return name, path, args, kwargs
 
     def contribute_to_class(
@@ -744,4 +754,6 @@ class SizeField(models.CharField):
         form_class = kwargs["form_class"]
         if isinstance(form_class, type) and issubclass(form_class, SizeFormField):
             kwargs["size_unit_field"] = self.size_unit_field
+            if self.show_chart_link is False:
+                kwargs.setdefault("show_chart_link", False)
         return super().formfield(**kwargs)

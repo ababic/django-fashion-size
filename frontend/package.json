@@ -2,8 +2,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild size_value_field/mount.jsx --bundle --format=iife --jsx=automatic --minify --define:process.env.NODE_ENV=\\\"production\\\" --outfile=../src/django_fashion_size/static/django_fashion_size/size_value_field.js && cp size_value_field/size_value_field.css ../src/django_fashion_size/static/django_fashion_size/size_value_field.css",
-    "lint": "eslint size_value_field && stylelint \"size_value_field/**/*.css\""
+    "build": "node build.mjs",
+    "lint": "eslint size_value_field && stylelint \"size_value_field/**/*.css\"",
+    "test": "node --test size_value_control.test.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -16,6 +17,7 @@
     "eslint-plugin-react": "^7.37.4",
     "eslint-plugin-react-hooks": "^5.2.0",
     "globals": "^16.0.0",
+    "jsdom": "^26.1.0",
     "stylelint": "^16.15.0",
     "stylelint-config-standard": "^37.0.0"
   }

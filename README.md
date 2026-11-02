@@ -78,7 +78,7 @@ class AttributeValue(models.Model):
 
 Importing this package registers Django's `get_language` as the `fashion-size` display language and makes `Size.display()` use it. English lengths render as `32"` and `81cm`; other languages render as `32 in` and `81 cm`. `fashion-size` uses that same formatting for UK, US, and AU waist and chest sizes, and for UK, US, and EU band sizes. EU waist and chest labels, AU bands, and French bands keep their region prefix (`EU 46`). `UK 10` and `DD` stay the same in every language. Cup size also accepts sports-bra alpha labels (`XXS`, `XS`, `S`, `MD`, `LG`, `XL`, `XXL`). They convert as the same token in every region, and the autocomplete lists them after the letter chart. `Size.display()` shows `MD` and `LG` as `M` and `L`; the stored token stays `MD` and `LG`. Brand charts ship with `fashion-size`; pass `brand_name` and `product_type` on `Size.convert` / `Size.convert_to_locale`. The model fields do not need this package in `INSTALLED_APPS`.
 
-`SizeField`'s form control is an autocomplete. You type a size and the list shows chart values that start with that text. A short select beside the field chooses the region or unit you are typing (`UK`, `EU`, `in`, `cm`). A "View conversion chart" link to the right of the field opens the conversion chart. The value saved on the model is the token in `size_unit_field` (`10` when the field stores UK dress sizes, even if you typed EU `38`). Add `django_fashion_size` to `INSTALLED_APPS` so the widget's CSS and script are found.
+`SizeField`'s form control is an autocomplete. You type a size and the list shows chart values that start with that text. A short select beside the field chooses the region or unit you are typing (`UK`, `EU`, `in`, `cm`). A "View conversion chart" link to the right of the field opens the conversion chart. Pass `show_chart_link=False` on `SizeField`, `SizeFormField`, or `SizeValueWidget` when that link is not wanted. The value saved on the model is the token in `size_unit_field` (`10` when the field stores UK dress sizes, even if you typed EU `38`). Add `django_fashion_size` to `INSTALLED_APPS` so the widget's CSS and script are found.
 
 Length size types (`chest`, `waist`, `inside-leg`, `shorts-inseam`, `trousers-inseam`, `collar`, `sleeve`) convert between inches and centimetres inside that type's own bounds. Shorts inseam is 2–22 inches, trousers inseam is 24–42, and sleeve is 28–40. The autocomplete uses those bounds.
 
@@ -107,6 +107,46 @@ value = SizeFormField(
     product_type_name_field="product_type_name",
 )
 ```
+
+## Using the field outside a Django form
+
+`build_size_value_config` returns the same JSON the form widget embeds. Pass the size unit, brand, product type, age group, and gender yourself. It does not include the hidden `name__entry`, `name__format`, and `name__unit` inputs, or the sibling field names a Django post uses.
+
+```python
+from django_fashion_size import build_size_value_config
+
+config = build_size_value_config(
+    size_unit=unit,
+    brand_name=brand_name,
+    product_type_name=product_type_name,
+    age_group="adult",
+    gender="female",
+    custom_values=["One Size"],
+    entry_region="eu",
+    label="Size",
+    show_chart_link=True,
+)
+```
+
+Pass `units` when the host can switch size units and needs every chart in one payload. Omit it to embed `size_unit` only.
+
+The autocomplete is also an ESM bundle, `django-fashion-size/size-value-field`, with `react` and `react-dom` left external. Importing it pulls in `size_value_field.css`. Django admin pages keep using the self-mounting `size_value_field.js` (React included, with the document observer). A host that renders the component itself should not load that script.
+
+```javascript
+import { SizeValueControl } from "django-fashion-size/size-value-field";
+
+<SizeValueControl
+  config={config}
+  value={storedToken}
+  disabled={disabled}
+  showChartLink={config.showChartLink}
+  onChange={(token, entry) => {
+    // entry is { text, format, unit }
+  }}
+/>
+```
+
+`value` is the stored token. Changing it after the first render updates the cell. `onChange` receives that token and the entry `{ text, format, unit }`. `showChartLink` (or `show_chart_link` / `config.showChartLink`) hides the conversion chart link. `SizeValueField` is the lower-level control (`measurement`, `bundles`, `choices`) for a host that already has those props.
 
 ## Size description API
 

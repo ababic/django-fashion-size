@@ -12,10 +12,10 @@ Most behaviour is delegated to `fashion-size`. This repo should adapt to that li
 
 - `src/django_fashion_size/`: the package (hatchling build, `src` layout).
   - `model_fields.py`: `SizeField`, `SizeTypeField`, `SizeUnitField`, `FashionProductTypeField`, and their form fields.
-  - `widgets.py`: `SizeValueWidget`, `SizeFormField`, `SizeBoundField`, and the JSON config built for the frontend (`size_value_config`). Chart and scale construction live here too (`_scale_from_chart`, `_resolve_scale`).
+  - `widgets.py`: `SizeValueWidget`, `SizeFormField`, `SizeBoundField`, and the JSON config built for the frontend (`build_size_value_config`, `size_value_config`). Chart and scale construction live here too (`_scale_from_chart`, `_resolve_scale`). `build_size_value_config` does not need a form.
   - `kinds.py`: `TextChoices` enums (`SizeTypeSlug`, `SizeUnitSlug`, `FashionProductType`) whose values must match fashion-size.
   - `__init__.py`: import side effects. Importing the package registers Django's `get_language` with fashion-size and replaces `Size.display`. Keep that in mind when changing imports.
-  - `static/django_fashion_size/`: compiled widget assets (`size_value_field.js`, `size_value_field.css`). These are generated and committed.
+  - `static/django_fashion_size/`: compiled widget assets (`size_value_field.js`, `size-value-field.js`, `size_value_field.css`). These are generated and committed. The IIFE is the Django media script. The ESM bundle is `django-fashion-size/size-value-field` and leaves React external.
 - `frontend/`: the React autocomplete widget source (`size_value_field/`), with its own `package.json`, ESLint, and Stylelint configs.
 - `tests/`: pytest suite. Each module targets one field or widget. `test_size_value_widget.py` is the largest.
 - `hatch_build.py`: build hook that runs `npm ci` and `npm run build` in `frontend/` when building a wheel or sdist from the repo.
@@ -50,15 +50,15 @@ uv run --with fashion-size==<version> pytest tests
 tox
 tox -e py312-django60
 
-# Frontend lint and build
-cd frontend && npm ci && npm run lint && npm run build
+# Frontend lint, component tests, and build
+cd frontend && npm ci && npm run lint && npm test && npm run build
 ```
 
 Run a single test with `uv run pytest tests/test_size_value_widget.py::test_name`.
 
 ## Frontend assets
 
-`npm run build` writes `src/django_fashion_size/static/django_fashion_size/size_value_field.js` and copies the CSS there. CI's `frontend.yml` runs `git diff --exit-code` on that directory, so:
+`npm run build` writes `src/django_fashion_size/static/django_fashion_size/size_value_field.js` (IIFE, for Django) and `size-value-field.js` (ESM, React external), and copies the CSS there. CI's `frontend.yml` runs `git diff --exit-code` on that directory, so:
 
 - If you change anything under `frontend/`, run `npm run build` and commit the regenerated static files in the same commit.
 - Do not hand-edit the compiled files.
@@ -96,7 +96,7 @@ Run a single test with `uv run pytest tests/test_size_value_widget.py::test_name
 
 ## Release process
 
-1. Bump `version` in `pyproject.toml` (CalVer is used by fashion-size, but this package uses SemVer `X.Y.Z`; follow the existing history).
+1. Bump `version` in `pyproject.toml` (CalVer is used by fashion-size, but this package uses SemVer `X.Y.Z`; follow the existing history). Keep the root `package.json` version in step with it.
 2. Update `uv.lock` (`uv lock`) so the editable package version matches.
 3. Merge to `main` (or a `release-*` branch). The release workflow refuses tags that are not on `main` or a `release-*` branch.
 4. Tag `vX.Y.Z` on that commit. The workflow builds the wheel and sdist (compiling the frontend), attaches them to a GitHub release, and publishes to PyPI.

@@ -37,6 +37,9 @@ jobs:
       - name: Lint JavaScript and CSS
         run: npm run lint
 
+      - name: Test the size field component
+        run: npm test
+
       - name: Build widget assets
         run: npm run build
 

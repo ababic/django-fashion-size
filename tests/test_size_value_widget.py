@@ -2,6 +2,7 @@
 
 import json
 import re
+from pathlib import Path
 from types import SimpleNamespace
 
 import django
@@ -24,6 +25,7 @@ from django.db import models
 from fashion_size.types import (
     CM_CHEST_SIZE,
     SIZE_UNIT_BY_SLUG,
+    SIZE_UNITS,
     Size,
     UK_ADULT_SHOE_SIZE,
     UK_KIDS_SHOE_SIZE,
@@ -35,6 +37,7 @@ from django_fashion_size import (
     SizeFormField,
     SizeUnitField,
     SizeValueWidget,
+    build_size_value_config,
 )
 from django_fashion_size.model_fields import stored_size_token
 
@@ -829,6 +832,128 @@ def test_entry_region_must_be_a_region_the_size_supports() -> None:
         SizeFormField(size_unit="in-shorts-inseam", entry_region="eu")
 
 
+def _shared_config(config: dict) -> dict:
+    """The payload ``build_size_value_config`` owns. The form adds field names and ``disabled``."""
+    payload = dict(config)
+    for key in ("sizeUnitField", "brandField", "productTypeField", "disabled"):
+        payload.pop(key, None)
+    return payload
+
+
+def test_build_size_value_config_matches_a_fixed_unit_form() -> None:
+    form = StoredValueForm(initial={"value": "5"})
+    bound = _config(form, "value")
+    built = build_size_value_config(
+        size_unit=UK_ADULT_SHOE_SIZE,
+        brand_name="Dune London",
+        product_type_name="Shoes",
+        age_group="adult",
+        gender="female",
+        label=bound["label"],
+    )
+    assert built == _shared_config(bound)
+    assert "sizeUnitField" not in built
+
+
+def test_build_size_value_config_matches_the_model_form() -> None:
+    form = ItemForm(
+        initial={
+            "size_unit": "uk-dress-size",
+            "age_group": "adult",
+            "gender": "female",
+            "size": "10",
+        }
+    )
+    bound = _config(form)
+    built = build_size_value_config(
+        size_unit="uk-dress-size",
+        age_group="adult",
+        gender="female",
+        units=list(SIZE_UNITS),
+        label=bound["label"],
+    )
+    assert built["units"]["uk-dress-size"]["values"]["eu"]
+    assert built == _shared_config(bound)
+
+
+def test_build_size_value_config_locks_the_entry_region() -> None:
+    built = build_size_value_config(
+        size_unit="uk-dress-size",
+        age_group="adult",
+        gender="female",
+        entry_region="eur",
+        custom_values=["One Size", "S/M", "S/M", "  "],
+    )
+    measurement = built["units"]["uk-dress-size"]["measurement"]
+    assert built["entryRegion"] == "eu"
+    assert measurement["format_locked"] is True
+    assert measurement["formats"] == [{"value": "eu", "label": "EU"}]
+    assert built["customValues"] == ["One Size", "S/M"]
+    assert built["units"]["custom"]["values"]["custom"][0]["stored"] == "One Size"
+    assert "sizeUnitField" not in built
+
+
+def test_build_size_value_config_rejects_a_region_the_unit_lacks() -> None:
+    with pytest.raises(ValueError, match="no FR"):
+        build_size_value_config(
+            size_unit="uk-waist-size",
+            age_group="adult",
+            gender="male",
+            entry_region="fr",
+        )
+
+
+def test_unknown_size_unit_slug_still_renders() -> None:
+    config = _config(ItemForm(initial={"size_unit": "nope"}))
+    assert config["initialUnit"] == "nope"
+    assert "uk-dress-size" in config["units"]
+
+
+def test_show_chart_link_can_be_turned_off() -> None:
+    class HiddenChartForm(forms.Form):
+        value = SizeFormField(
+            size_unit=UK_ADULT_SHOE_SIZE,
+            age_group="adult",
+            gender="female",
+            show_chart_link=False,
+        )
+
+    assert _config(HiddenChartForm(), "value")["showChartLink"] is False
+    shown = _config(StoredValueForm(), "value")
+    assert shown["showChartLink"] is True
+    hidden = build_size_value_config(
+        size_unit="uk-dress-size",
+        age_group="adult",
+        gender="female",
+        show_chart_link=False,
+    )
+    assert hidden["showChartLink"] is False
+
+
+def test_size_field_can_hide_the_chart_link() -> None:
+    hidden = SizeField(size_unit_field="size_unit", show_chart_link=False)
+    form_field = hidden.formfield()
+    assert isinstance(form_field, SizeFormField)
+    assert form_field.widget.show_chart_link is False
+    assert hidden.deconstruct()[3]["show_chart_link"] is False
+    shown = SizeField(size_unit_field="size_unit")
+    assert "show_chart_link" not in shown.deconstruct()[3]
+    assert shown.formfield().widget.show_chart_link is True
+
+
+def test_esm_bundle_is_for_a_host_bundler() -> None:
+    root = Path(__file__).resolve().parents[1]
+    static = root / "src" / "django_fashion_size" / "static" / "django_fashion_size"
+    esm = (static / "size-value-field.js").read_text()
+    iife = (static / "size_value_field.js").read_text()
+    assert "size_value_field.css" in esm
+    assert "SizeValueControl" in esm
+    assert "SizeValueField" in esm
+    assert "MutationObserver" not in esm
+    assert 'from"react"' in esm or 'from "react"' in esm
+    assert "MutationObserver" in iife
+
+
 def test_model_field_uses_the_autocomplete_widget() -> None:
     field = Item._meta.get_field("size").formfield()
     assert isinstance(field, SizeFormField)
@@ -850,5 +975,10 @@ if __name__ == "__main__":
     test_custom_size_cleans_to_a_token_with_no_unit()
     test_unknown_custom_size_is_rejected()
     test_fixed_unit_custom_value_has_no_size_unit()
+    test_build_size_value_config_matches_a_fixed_unit_form()
+    test_build_size_value_config_matches_the_model_form()
+    test_build_size_value_config_locks_the_entry_region()
+    test_show_chart_link_can_be_turned_off()
+    test_size_field_can_hide_the_chart_link()
     test_model_field_uses_the_autocomplete_widget()
     print("ok")

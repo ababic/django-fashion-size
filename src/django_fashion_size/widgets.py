@@ -3,12 +3,15 @@
 The size is a text field. Suggestions appear as you type and come from the
 fashion-size chart for the field's size unit. A short select chooses the region
 or length unit you are typing. A "View conversion chart" link to the
-right of the field opens that chart. The posted value is the token stored
-by ``SizeField``.
+right of the field opens that chart; ``show_chart_link=False`` leaves it
+out. The posted value is the token stored by ``SizeField``.
+``build_size_value_config`` returns the same JSON without a bound form, for
+an API or another React tree.
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import InvalidOperation
 from typing import Any
@@ -684,80 +687,122 @@ def _linked_field_name(form: forms.BaseForm, name: str) -> str:
     return ""
 
 
-def size_value_config(
-    form: forms.BaseForm,
+def build_size_value_config(
     *,
-    size_unit_field: str,
-    brand_name_field: str,
-    product_type_name_field: str,
-    widget: SizeValueWidget,
-    label: str,
+    size_unit: SizeUnit | str | None = None,
+    brand_name: Any = None,
+    product_type_name: Any = None,
+    age_group: str | None = None,
+    gender: str | None = None,
+    custom_values: list[str] | None = None,
+    choices: list[str] | None = None,
+    entry_region: Locale | str | None = None,
+    label: Any = "",
+    units: Sequence[SizeUnit] | None = None,
+    show_chart_link: bool = True,
 ) -> dict[str, Any]:
-    """JSON for one autocomplete: charts, suggestion lists, and the active size unit."""
-    objects = _context_objects(form, size_unit_field)
-    age_group = _plain(_first(widget, form, objects, "age_group", widget.age_group))
-    gender = _plain(_first(widget, form, objects, "gender", widget.gender))
-    brand = _brand_name(_first(widget, form, objects, brand_name_field, widget.brand_name))
-    product_type = _product_type_slug(
-        _first(widget, form, objects, product_type_name_field, widget.product_type_name)
-    )
-    current = _current_unit_slug(form, size_unit_field, widget.size_unit)
-    on_form = widget.size_unit is None and "." not in size_unit_field and size_unit_field in form.fields
-    units = [unit for unit in SIZE_UNITS if on_form or unit.slug == current]
+    """JSON for one autocomplete, with no form and no hidden input names.
+
+    ``size_unit`` is the stored unit (a ``SizeUnit`` or a slug). ``units``
+    embeds every unit a caller can switch to; omit it to embed ``size_unit``
+    only. ``entry_region`` locks the region select the same way
+    ``SizeFormField`` does. ``show_chart_link`` hides the conversion chart
+    when false. The result has no ``sizeUnitField``, ``brandField``, or
+    ``productTypeField`` — those belong to a Django form post.
+    """
+    region = _normalize_entry_region(entry_region)
+    pinned: SizeUnit | None = None
+    initial = ""
+    if isinstance(size_unit, SizeUnit):
+        pinned = size_unit
+        initial = size_unit.slug
+    elif size_unit not in (None, ""):
+        text = str(size_unit).strip()
+        if text.lower() == CUSTOM_SIZE_UNIT_SLUG:
+            initial = CUSTOM_SIZE_UNIT_SLUG
+        elif text:
+            try:
+                pinned = parse_size_unit_slug(text)
+            except ValueError:
+                # A bound form can post a slug that is not a size unit yet.
+                # Callers who pass ``size_unit`` on its own still get the error.
+                if units is None:
+                    raise
+                initial = text.lower()
+            else:
+                initial = pinned.slug
+    if units is None:
+        _check_entry_region(pinned, region)
+        selected = [pinned] if pinned is not None else []
+    else:
+        selected = []
+        seen: set[str] = set()
+        for unit in units:
+            if unit.slug in seen:
+                continue
+            seen.add(unit.slug)
+            selected.append(unit)
+        if pinned is not None and pinned.slug not in seen:
+            selected.append(pinned)
+    age = _plain(age_group)
+    sex = _plain(gender)
+    brand = _brand_name(brand_name)
+    product_type = _product_type_slug(product_type_name)
+    cleaned_custom = _normalize_custom_values(custom_values)
+    choice_list = list(choices) if choices is not None else None
     charts: dict[str, Any] = {}
     payload: dict[str, Any] = {}
-    choices = list(widget.choices) if widget.choices is not None else None
     scales: dict[str, tuple[ConversionScale | None, Any]] = {}
-    for size_unit in units:
-        key = size_unit.size_type.slug
-        is_label = size_unit.size_type.family == SizeFamily.LABEL
+    for unit in selected:
+        key = unit.size_type.slug
+        is_label = unit.size_type.family == SizeFamily.LABEL
         if not is_label and key not in scales:
             scales[key] = _resolve_scale(
-                size_unit.size_type,
-                age_group=age_group,
-                gender=gender,
+                unit.size_type,
+                age_group=age,
+                gender=sex,
                 brand_name=brand,
                 product_type=product_type,
             )
         scale, brand_chart = (None, None) if is_label else scales[key]
-        formats = _entry_formats(size_unit.size_type)
-        select_formats, format_locked = _select_formats(size_unit.size_type, widget.entry_region)
+        formats = _entry_formats(unit.size_type)
+        select_formats, format_locked = _select_formats(unit.size_type, region)
         chart_key = ""
         if scale is not None:
             chart_key = key
             if chart_key not in charts:
-                charts[chart_key] = _chart_payload(scale, size_unit.size_type, formats, brand_chart, gender)
+                charts[chart_key] = _chart_payload(scale, unit.size_type, formats, brand_chart, sex)
         values: dict[str, list[dict[str, str]]] = {}
-        unit_choices = choices if size_unit.slug == current else None
+        unit_choices = choice_list if unit.slug == initial else None
         if is_label:
-            values[str(size_unit.size_type.slug)] = _label_suggestions(size_unit.size_type)
+            values[str(unit.size_type.slug)] = _label_suggestions(unit.size_type)
         elif scale is not None:
             for format_name, _format_label in formats:
                 values[format_name] = _suggestion_values(
                     scale,
-                    size_unit,
-                    _entry_unit(size_unit.size_type, format_name),
+                    unit,
+                    _entry_unit(unit.size_type, format_name),
                     unit_choices,
                 )
         measurement: dict[str, Any] = {
-            "kind": size_unit.size_type.slug,
-            "label": size_unit.size_type.label,
-            "storage_format": _storage_format(size_unit),
-            "storage_measurement": size_unit.slug,
-            "format_side": "right" if _is_length_size(size_unit) else "left",
+            "kind": unit.size_type.slug,
+            "label": unit.size_type.label,
+            "storage_format": _storage_format(unit),
+            "storage_measurement": unit.slug,
+            "format_side": "right" if _is_length_size(unit) else "left",
             "formats": [{"value": value, "label": format_label} for value, format_label in select_formats],
             "format_locked": format_locked,
-            "length": _is_length_size(size_unit),
+            "length": _is_length_size(unit),
         }
         if measurement["length"]:
-            bounds = length_entry_bounds(size_unit.size_type)
+            bounds = length_entry_bounds(unit.size_type)
             measurement["length_min"] = format_raw(bounds.min_inches)
             measurement["length_max"] = format_raw(bounds.max_inches)
-            measurement["length_error"] = length_bounds_message(size_unit.size_type)
-        payload[size_unit.slug] = {
+            measurement["length_error"] = length_bounds_message(unit.size_type)
+        payload[unit.slug] = {
             "measurement": measurement,
             "context": {
-                "demographic_label": _demographic_label(age_group, gender),
+                "demographic_label": _demographic_label(age, sex),
                 "product_type_name": _product_label(product_type) if product_type else "",
                 "product_type_group_name": "",
             },
@@ -765,10 +810,8 @@ def size_value_config(
             "values": values,
             "choices": unit_choices or [],
         }
-    custom_values = widget.custom_values
-    if custom_values:
-        # A synthetic unit. The size-unit select's Custom option points here.
-        # The autocomplete is initialised from this bundle; nothing converts.
+    if cleaned_custom:
+        # A synthetic unit. Nothing converts; the list is the whole vocabulary.
         payload[CUSTOM_SIZE_UNIT_SLUG] = {
             "measurement": {
                 "kind": CUSTOM_SIZE_UNIT_SLUG,
@@ -781,33 +824,71 @@ def size_value_config(
                 "custom": True,
             },
             "context": {
-                "demographic_label": _demographic_label(age_group, gender),
+                "demographic_label": _demographic_label(age, sex),
                 "product_type_name": _product_label(product_type) if product_type else "",
                 "product_type_group_name": "",
             },
             "chartKey": "",
             "values": {
                 CUSTOM_SIZE_UNIT_SLUG: [
-                    {"input": value, "stored": value} for value in custom_values
+                    {"input": value, "stored": value} for value in cleaned_custom
                 ]
             },
-            "choices": list(custom_values),
+            "choices": list(cleaned_custom),
         }
     return {
-        "initialUnit": current,
-        "sizeUnitField": form.add_prefix(size_unit_field) if on_form else "",
-        "brandField": _linked_field_name(form, brand_name_field),
-        "productTypeField": _linked_field_name(form, product_type_name_field),
-        "ageGroup": age_group,
-        "gender": gender,
+        "initialUnit": initial,
+        "entryRegion": region,
+        "ageGroup": age,
+        "gender": sex,
         "brand": brand,
         "productType": product_type,
-        "label": label,
-        "customValues": list(custom_values),
+        "label": "" if label is None else label,
+        "showChartLink": bool(show_chart_link),
+        "customValues": list(cleaned_custom),
         "customLabel": _CUSTOM_LABEL,
         "units": payload,
         "charts": charts,
     }
+
+
+def size_value_config(
+    form: forms.BaseForm,
+    *,
+    size_unit_field: str,
+    brand_name_field: str,
+    product_type_name_field: str,
+    widget: SizeValueWidget,
+    label: str,
+) -> dict[str, Any]:
+    """Form JSON: ``build_size_value_config`` plus the sibling field names."""
+    objects = _context_objects(form, size_unit_field)
+    age_group = _plain(_first(widget, form, objects, "age_group", widget.age_group))
+    gender = _plain(_first(widget, form, objects, "gender", widget.gender))
+    brand = _brand_name(_first(widget, form, objects, brand_name_field, widget.brand_name))
+    product_type = _product_type_slug(
+        _first(widget, form, objects, product_type_name_field, widget.product_type_name)
+    )
+    current = _current_unit_slug(form, size_unit_field, widget.size_unit)
+    on_form = widget.size_unit is None and "." not in size_unit_field and size_unit_field in form.fields
+    included = [unit for unit in SIZE_UNITS if on_form or unit.slug == current]
+    config = build_size_value_config(
+        size_unit=current,
+        brand_name=brand,
+        product_type_name=product_type,
+        age_group=age_group,
+        gender=gender,
+        custom_values=list(widget.custom_values),
+        choices=list(widget.choices) if widget.choices is not None else None,
+        entry_region=widget.entry_region,
+        label=label,
+        units=included,
+        show_chart_link=widget.show_chart_link,
+    )
+    config["sizeUnitField"] = form.add_prefix(size_unit_field) if on_form else ""
+    config["brandField"] = _linked_field_name(form, brand_name_field)
+    config["productTypeField"] = _linked_field_name(form, product_type_name_field)
+    return config
 
 
 class SizeValueWidget(forms.Widget):
@@ -825,6 +906,7 @@ class SizeValueWidget(forms.Widget):
         choices: list[str] | None = None,
         custom_values: list[str] | None = None,
         entry_region: Locale | str | None = None,
+        show_chart_link: bool = True,
     ) -> None:
         self.age_group = age_group
         self.gender = gender
@@ -836,6 +918,7 @@ class SizeValueWidget(forms.Widget):
         self.choices = choices
         self.custom_values = _normalize_custom_values(custom_values)
         self.entry_region = _normalize_entry_region(entry_region)
+        self.show_chart_link = bool(show_chart_link)
         _check_entry_region(self.size_unit, self.entry_region)
         self.config: dict[str, Any] = {}
         super().__init__(attrs)
@@ -928,6 +1011,9 @@ class SizeFormField(forms.CharField):
     limits suggestions to those values. Without them, the region is shown
     and cannot be changed. Length and label units have no region list, so
     the lock does not apply to them.
+
+    ``show_chart_link`` defaults to true. Set it false to omit the
+    conversion-chart link.
     """
 
     def __init__(
@@ -943,6 +1029,7 @@ class SizeFormField(forms.CharField):
         gender: str | None = None,
         custom_values: list[str] | None = None,
         entry_region: Locale | str | None = None,
+        show_chart_link: bool | None = None,
         **kwargs: Any,
     ) -> None:
         self.size_unit_field = size_unit_field
@@ -964,6 +1051,8 @@ class SizeFormField(forms.CharField):
                 widget.custom_values = _normalize_custom_values(custom_values)
             if entry_region is not None:
                 widget.entry_region = _normalize_entry_region(entry_region)
+            if show_chart_link is not None:
+                widget.show_chart_link = bool(show_chart_link)
             _check_entry_region(widget.size_unit, widget.entry_region)
         super().__init__(*args, **kwargs)
 

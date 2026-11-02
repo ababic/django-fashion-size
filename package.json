@@ -1,0 +1,17 @@
+{
+  "name": "django-fashion-size",
+  "version": "0.11.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./size-value-field": "./src/django_fashion_size/static/django_fashion_size/size-value-field.js"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "sideEffects": [
+    "*.css",
+    "./src/django_fashion_size/static/django_fashion_size/size-value-field.js"
+  ]
+}

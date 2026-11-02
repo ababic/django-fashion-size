@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { createRoot } from "react-dom/client";
 
+import { bundlesFor } from "./bundles";
 import { SizeValueField } from "./SizeValueField";
 
 const roots = new WeakMap();
@@ -19,24 +20,6 @@ function writeField(mount, name, value) {
   if (node) {
     node.value = value ?? "";
   }
-}
-
-function bundlesFor(unit, charts) {
-  const chart = unit.chartKey ? charts?.[unit.chartKey] || null : null;
-  const bundles = {};
-  // Keep the storage format when the select is locked to another region, so a
-  // saved token is still recognised and is not treated as a custom value.
-  const names = new Set(unit.measurement.formats.map((item) => item.value));
-  if (unit.measurement.storage_format) {
-    names.add(unit.measurement.storage_format);
-  }
-  names.forEach((value) => {
-    bundles[value] = {
-      values: unit.values?.[value] || [],
-      chart,
-    };
-  });
-  return bundles;
 }
 
 function postedFormat(measurement) {
@@ -72,7 +55,11 @@ function BoundSize({ mount, input, config, unitSlug, customValues, customLabel }
   );
   const onChange = useCallback(
     (value) => {
-      input.value = value;
+      const next = value ?? "";
+      if (input.value === next) {
+        return;
+      }
+      input.value = next;
       input.dispatchEvent(new Event("input", { bubbles: true }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
     },
@@ -92,6 +79,7 @@ function BoundSize({ mount, input, config, unitSlug, customValues, customLabel }
       ariaLabel={config.label || unit.measurement.label}
       customValues={customValues}
       customLabel={customLabel}
+      showChartLink={config.showChartLink !== false}
       onChange={onChange}
       onEntry={onEntry}
     />

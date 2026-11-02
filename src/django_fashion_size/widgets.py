@@ -1,12 +1,15 @@
 """Autocomplete form control for ``SizeField``.
 
 The size is a text field. Suggestions appear as you type and come from the
-fashion-size chart for the field's size unit. A short select chooses the region
-or length unit you are typing. A "View conversion chart" link to the
-right of the field opens that chart; ``show_chart_link=False`` leaves it
-out. The posted value is the token stored by ``SizeField``.
-``build_size_value_config`` returns the same JSON without a bound form, for
-an API or another React tree.
+fashion-size chart for the field's size unit, plus any valid labels that are
+not rows on that chart (shoe and cup alpha sizes). A short select chooses the
+region or length unit you are typing. ``selection="select"`` replaces the
+autocomplete with a dropdown of the same values. ``unavailable`` keeps named
+sizes in that list with an `` (n/a)`` suffix and refuses them. A "View
+conversion chart" link to the right of the field opens that chart;
+``show_chart_link=False`` leaves it out. The posted value is the token stored
+by ``SizeField``. ``build_size_value_config`` returns the same JSON without a
+bound form, for an API or another React tree.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ from fashion_size.scales import cup_sort_key, default_scale
 from fashion_size.types import (
     CUP_ALPHA_ORDER,
     FRENCH_BAND_OFFSET,
+    SHOE_ALPHA_ORDER,
     SIZE_UNITS,
     ConversionScale,
     IncompatibleSizeError,
@@ -65,10 +69,20 @@ from django_fashion_size.model_fields import (
 _CHART_FORMATS = (("uk", "UK"), ("eu", "EU"), ("us", "US"), ("au", "AU"))
 _LENGTH_FORMATS = (("in", "in"), ("cm", "cm"))
 _REGION_LABELS = dict((*_CHART_FORMATS, ("fr", "FR")))
+_SELECTIONS = frozenset({"autocomplete", "select"})
 _NOT_ON_CHART = "That size is not on the chart."
 _UNRECOGNISED_LABEL = "That size is not recognised."
+_UNAVAILABLE = _("That size is not available.")
+_UNAVAILABLE_SUFFIX = _(" (n/a)")
 _CUSTOM_SIZE = "Choose a custom size."
 _CUSTOM_LABEL = _("Custom")
+# Valid sizes that are not rows on the conversion chart. Each entry region
+# lists the same tokens, and the stored value is that token.
+_OFF_CHART_TOKENS = {
+    SizeFamily.CUP_SIZE: CUP_ALPHA_ORDER,
+    SizeFamily.SHOE_SIZE: SHOE_ALPHA_ORDER,
+}
+_SHOE_ALPHA_RANK = {token: index for index, token in enumerate(SHOE_ALPHA_ORDER)}
 
 
 class _InvalidEntry:
@@ -389,9 +403,9 @@ def _suggestion_values(
             pairs.append((converted, parsed.raw))
     else:
         pairs = list(zip(scale.raw_values(entry), scale.raw_values(storage), strict=True))
-        # Alpha labels are valid cup sizes and are not rows on the letter chart.
-        if scale.size_type.family == SizeFamily.CUP_SIZE:
-            pairs.extend((token, token) for token in CUP_ALPHA_ORDER)
+        # Alpha labels are valid sizes and are not rows on the chart.
+        # The stored token is the label itself in every region.
+        pairs.extend((token, token) for token in _OFF_CHART_TOKENS.get(scale.size_type.family, ()))
     cup = scale.size_type.family == SizeFamily.CUP_SIZE
     for entry_raw, stored_raw in pairs:
         label = _token(entry_raw)
@@ -409,7 +423,10 @@ def _suggestion_sort(item: dict[str, str], *, cup: bool = False) -> tuple[int, i
     text = item["input"]
     if _is_number(text):
         return (0, float(text), text)
-    return (1, 0.0, text.lower())
+    rank = _SHOE_ALPHA_RANK.get(text)
+    if rank is not None:
+        return (1, float(rank), text)
+    return (2, 0.0, text.lower())
 
 
 def _is_number(text: str) -> bool:
@@ -417,6 +434,105 @@ def _is_number(text: str) -> bool:
         float(text)
     except ValueError:
         return False
+    return True
+
+
+def _normalize_selection(value: str | None) -> str:
+    """``autocomplete`` (typed list) or ``select`` (dropdown of the same values)."""
+    text = "autocomplete" if value in (None, "") else str(value).strip().lower()
+    if text not in _SELECTIONS:
+        raise ValueError("selection must be 'autocomplete' or 'select'.")
+    return text
+
+
+def _normalize_unavailable(values: list[str] | None) -> tuple[str, ...]:
+    """Stored tokens, or aliases of them, that this context must not offer."""
+    if not values:
+        return ()
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        cleaned.append(text)
+    return tuple(cleaned)
+
+
+def _stored_token_for_unit(size_unit: SizeUnit, text: str) -> str | None:
+    """Canonical stored token for ``text`` in ``size_unit``, or ``None``."""
+    try:
+        return stored_size_token(Size.from_raw(text, size_unit))
+    except (ValueError, InvalidOperation, TypeError, ValidationError):
+        return None
+
+
+def _banned_tokens(size_unit: SizeUnit | None, unavailable: tuple[str, ...]) -> tuple[str, ...]:
+    """Caller tokens plus the stored token each one resolves to for this unit."""
+    banned: list[str] = []
+    seen: set[str] = set()
+
+    def add(token: str) -> None:
+        if token and token not in seen:
+            seen.add(token)
+            banned.append(token)
+
+    for text in unavailable:
+        add(text)
+        if size_unit is not None:
+            add(_stored_token_for_unit(size_unit, text) or "")
+    return tuple(banned)
+
+
+def _token_unavailable(size_unit: SizeUnit | None, token: str, unavailable: tuple[str, ...]) -> bool:
+    if not token or not unavailable:
+        return False
+    if size_unit is None:
+        folded = token.casefold()
+        return any(item.casefold() == folded for item in unavailable)
+    banned = set(_banned_tokens(size_unit, unavailable))
+    if token in banned:
+        return True
+    resolved = _stored_token_for_unit(size_unit, token)
+    return bool(resolved and resolved in banned)
+
+
+def _mark_unavailable(
+    values: list[dict[str, str]],
+    banned: tuple[str, ...],
+    *,
+    casefold: bool = False,
+) -> list[dict[str, Any]]:
+    """Copy ``values``, flagging any whose label or stored token is banned."""
+    if not banned:
+        return [dict(item) for item in values]
+    exact = set(banned)
+    folded = {item.casefold() for item in banned} if casefold else set()
+    marked: list[dict[str, Any]] = []
+    for item in values:
+        hit = item["stored"] in exact or item["input"] in exact
+        if not hit and folded:
+            hit = item["stored"].casefold() in folded or item["input"].casefold() in folded
+        if hit:
+            marked.append({**item, "unavailable": True})
+        else:
+            marked.append(dict(item))
+    return marked
+
+
+def _closed_list(size_unit: SizeUnit) -> bool:
+    """True when the size unit has a fixed set of values a dropdown can list.
+
+    Lengths are any number inside a range. Age bands are typed (``6 months``)
+    and have no fixed vocabulary to put in a menu.
+    """
+    family = size_unit.size_type.family
+    if family == SizeFamily.LENGTH:
+        return False
+    if family == SizeFamily.LABEL:
+        vocabulary = size_unit.size_type.vocabulary
+        return bool(vocabulary and vocabulary.display)
     return True
 
 
@@ -633,10 +749,15 @@ def posted_size_token(
     name: str,
     custom_values: tuple[str, ...] = (),
     entry_region: str = "",
+    unavailable: tuple[str, ...] = (),
+    size_unit: SizeUnit | None = None,
 ) -> str | _InvalidEntry:
-    """Storage token from the autocomplete, or the plain input when script is off."""
+    """Storage token from the control, or the plain input when script is off."""
     if str(data.get(f"{name}__active") or "") != "1":
         value = data.get(name)
+        token = "" if value is None else str(value).strip()
+        if _token_unavailable(size_unit, token, unavailable):
+            return _InvalidEntry(str(_UNAVAILABLE), token)
         return "" if value is None else str(value)
     entry = data.get(f"{name}__entry")
     text = "" if entry is None else str(entry).strip()
@@ -648,10 +769,13 @@ def posted_size_token(
         matched = _match_custom(text, custom_values)
         if matched is None:
             return _InvalidEntry(_CUSTOM_SIZE, text)
+        if _token_unavailable(None, matched, unavailable):
+            return _InvalidEntry(str(_UNAVAILABLE), text)
         return matched
+    unit_slug = str(data.get(f"{name}__unit") or "").strip().lower()
     try:
-        return _convert_entry(
-            unit_slug=str(data.get(f"{name}__unit") or "").strip().lower(),
+        token = _convert_entry(
+            unit_slug=unit_slug,
             format_name=str(data.get(f"{name}__format") or "").strip().lower(),
             text=text,
             age_group=str(data.get(f"{name}__age_group") or "").strip().lower(),
@@ -663,6 +787,15 @@ def posted_size_token(
     except ValidationError as exc:
         message = exc.messages[0] if exc.messages else _NOT_ON_CHART
         return _InvalidEntry(message, text)
+    posted_unit = size_unit
+    if unit_slug:
+        try:
+            posted_unit = parse_size_unit_slug(unit_slug)
+        except ValueError:
+            posted_unit = size_unit
+    if _token_unavailable(posted_unit, token, unavailable):
+        return _InvalidEntry(str(_UNAVAILABLE), text)
+    return token
 
 
 def _posted_size_unit(data: Any, name: str, fallback: SizeUnit | None) -> SizeUnit | None:
@@ -700,17 +833,23 @@ def build_size_value_config(
     label: Any = "",
     units: Sequence[SizeUnit] | None = None,
     show_chart_link: bool = True,
+    selection: str | None = None,
+    unavailable: list[str] | None = None,
 ) -> dict[str, Any]:
-    """JSON for one autocomplete, with no form and no hidden input names.
+    """JSON for one size control, with no form and no hidden input names.
 
     ``size_unit`` is the stored unit (a ``SizeUnit`` or a slug). ``units``
     embeds every unit a caller can switch to; omit it to embed ``size_unit``
     only. ``entry_region`` locks the region select the same way
     ``SizeFormField`` does. ``show_chart_link`` hides the conversion chart
-    when false. The result has no ``sizeUnitField``, ``brandField``, or
-    ``productTypeField`` — those belong to a Django form post.
+    when false. ``selection`` is ``autocomplete`` or ``select``. ``unavailable``
+    lists stored tokens (or aliases) that stay visible with an `` (n/a)``
+    suffix and cannot be chosen. The result has no ``sizeUnitField``,
+    ``brandField``, or ``productTypeField`` — those belong to a Django form post.
     """
     region = _normalize_entry_region(entry_region)
+    mode = _normalize_selection(selection)
+    blocked = _normalize_unavailable(unavailable)
     pinned: SizeUnit | None = None
     initial = ""
     if isinstance(size_unit, SizeUnit):
@@ -772,17 +911,24 @@ def build_size_value_config(
             chart_key = key
             if chart_key not in charts:
                 charts[chart_key] = _chart_payload(scale, unit.size_type, formats, brand_chart, sex)
-        values: dict[str, list[dict[str, str]]] = {}
+        values: dict[str, list[dict[str, Any]]] = {}
         unit_choices = choice_list if unit.slug == initial else None
+        banned = _banned_tokens(unit, blocked)
         if is_label:
-            values[str(unit.size_type.slug)] = _label_suggestions(unit.size_type)
+            values[str(unit.size_type.slug)] = _mark_unavailable(
+                _label_suggestions(unit.size_type),
+                banned,
+            )
         elif scale is not None:
             for format_name, _format_label in formats:
-                values[format_name] = _suggestion_values(
-                    scale,
-                    unit,
-                    _entry_unit(unit.size_type, format_name),
-                    unit_choices,
+                values[format_name] = _mark_unavailable(
+                    _suggestion_values(
+                        scale,
+                        unit,
+                        _entry_unit(unit.size_type, format_name),
+                        unit_choices,
+                    ),
+                    banned,
                 )
         measurement: dict[str, Any] = {
             "kind": unit.size_type.slug,
@@ -793,6 +939,7 @@ def build_size_value_config(
             "formats": [{"value": value, "label": format_label} for value, format_label in select_formats],
             "format_locked": format_locked,
             "length": _is_length_size(unit),
+            "closed": _closed_list(unit),
         }
         if measurement["length"]:
             bounds = length_entry_bounds(unit.size_type)
@@ -809,6 +956,7 @@ def build_size_value_config(
             "chartKey": chart_key,
             "values": values,
             "choices": unit_choices or [],
+            "unavailable": list(banned),
         }
     if cleaned_custom:
         # A synthetic unit. Nothing converts; the list is the whole vocabulary.
@@ -821,6 +969,7 @@ def build_size_value_config(
                 "format_side": "left",
                 "formats": [{"value": CUSTOM_SIZE_UNIT_SLUG, "label": _CUSTOM_LABEL}],
                 "length": False,
+                "closed": True,
                 "custom": True,
             },
             "context": {
@@ -830,11 +979,14 @@ def build_size_value_config(
             },
             "chartKey": "",
             "values": {
-                CUSTOM_SIZE_UNIT_SLUG: [
-                    {"input": value, "stored": value} for value in cleaned_custom
-                ]
+                CUSTOM_SIZE_UNIT_SLUG: _mark_unavailable(
+                    [{"input": value, "stored": value} for value in cleaned_custom],
+                    blocked,
+                    casefold=True,
+                )
             },
             "choices": list(cleaned_custom),
+            "unavailable": list(blocked),
         }
     return {
         "initialUnit": initial,
@@ -845,6 +997,10 @@ def build_size_value_config(
         "productType": product_type,
         "label": "" if label is None else label,
         "showChartLink": bool(show_chart_link),
+        "selection": mode,
+        "unavailable": list(blocked),
+        "unavailableSuffix": _UNAVAILABLE_SUFFIX,
+        "unavailableMessage": _UNAVAILABLE,
         "customValues": list(cleaned_custom),
         "customLabel": _CUSTOM_LABEL,
         "units": payload,
@@ -884,6 +1040,8 @@ def size_value_config(
         label=label,
         units=included,
         show_chart_link=widget.show_chart_link,
+        selection=widget.selection,
+        unavailable=list(widget.unavailable),
     )
     config["sizeUnitField"] = form.add_prefix(size_unit_field) if on_form else ""
     config["brandField"] = _linked_field_name(form, brand_name_field)
@@ -892,7 +1050,12 @@ def size_value_config(
 
 
 class SizeValueWidget(forms.Widget):
-    """Autocomplete for a stored size token, with a region or unit select."""
+    """Size token control, with a region or unit select.
+
+    ``selection`` is ``autocomplete`` or ``select``. ``unavailable`` lists
+    stored tokens that stay in the list with an `` (n/a)`` suffix and cannot
+    be chosen.
+    """
 
     def __init__(
         self,
@@ -907,6 +1070,8 @@ class SizeValueWidget(forms.Widget):
         custom_values: list[str] | None = None,
         entry_region: Locale | str | None = None,
         show_chart_link: bool = True,
+        selection: str | None = None,
+        unavailable: list[str] | None = None,
     ) -> None:
         self.age_group = age_group
         self.gender = gender
@@ -919,6 +1084,8 @@ class SizeValueWidget(forms.Widget):
         self.custom_values = _normalize_custom_values(custom_values)
         self.entry_region = _normalize_entry_region(entry_region)
         self.show_chart_link = bool(show_chart_link)
+        self.selection = _normalize_selection(selection)
+        self.unavailable = _normalize_unavailable(unavailable)
         _check_entry_region(self.size_unit, self.entry_region)
         self.config: dict[str, Any] = {}
         super().__init__(attrs)
@@ -930,7 +1097,14 @@ class SizeValueWidget(forms.Widget):
     def value_from_datadict(
         self, data: Any, files: Any, name: str
     ) -> tuple[str, SizeUnit | None] | _InvalidEntry:
-        parsed = posted_size_token(data, name, self.custom_values, self.entry_region)
+        parsed = posted_size_token(
+            data,
+            name,
+            self.custom_values,
+            self.entry_region,
+            self.unavailable,
+            self.size_unit,
+        )
         if isinstance(parsed, _InvalidEntry):
             return parsed
         if str(data.get(f"{name}__active") or "") != "1":
@@ -1014,6 +1188,13 @@ class SizeFormField(forms.CharField):
 
     ``show_chart_link`` defaults to true. Set it false to omit the
     conversion-chart link.
+
+    ``selection`` is ``autocomplete`` (the default) or ``select``. ``select``
+    lists the same values in a dropdown. Lengths and age bands stay a text
+    field, because they have no fixed list. ``unavailable`` is a list of
+    stored tokens, or aliases such as ``medium``. Those sizes stay in the
+    list with an `` (n/a)`` suffix, cannot be chosen, and are rejected on
+    submit.
     """
 
     def __init__(
@@ -1030,6 +1211,8 @@ class SizeFormField(forms.CharField):
         custom_values: list[str] | None = None,
         entry_region: Locale | str | None = None,
         show_chart_link: bool | None = None,
+        selection: str | None = None,
+        unavailable: list[str] | None = None,
         **kwargs: Any,
     ) -> None:
         self.size_unit_field = size_unit_field
@@ -1053,6 +1236,10 @@ class SizeFormField(forms.CharField):
                 widget.entry_region = _normalize_entry_region(entry_region)
             if show_chart_link is not None:
                 widget.show_chart_link = bool(show_chart_link)
+            if selection is not None:
+                widget.selection = _normalize_selection(selection)
+            if unavailable is not None:
+                widget.unavailable = _normalize_unavailable(unavailable)
             _check_entry_region(widget.size_unit, widget.entry_region)
         super().__init__(*args, **kwargs)
 

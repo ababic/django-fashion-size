@@ -255,3 +255,143 @@ test("a parent can replace a chart token with a custom value", async () => {
   assert.equal(format.value, "custom");
   view.unmount();
 });
+
+test("selection select lists values and keeps the stored token across regions", async () => {
+  const seen = [];
+  const view = await render(
+    React.createElement(SizeValueControl, {
+      config: dressConfig(false),
+      value: "10",
+      selection: "select",
+      onChange(token, entry) {
+        seen.push([token, entry]);
+      },
+    })
+  );
+  assert.equal(view.input(), null);
+  const menu = view.host.querySelector("select.size-value__menu");
+  assert.equal(menu.options[0].value, "");
+  assert.equal(menu.options[0].text, "---");
+  assert.equal(menu.value, "10");
+  const format = view.host.querySelector("select.size-value__format");
+  await act(async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      window.HTMLSelectElement.prototype,
+      "value"
+    );
+    descriptor.set.call(format, "eu");
+    format.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await Promise.resolve();
+  });
+  assert.equal(view.host.querySelector("select.size-value__menu").value, "38");
+  assert.equal(seen.at(-1)[0], "10");
+  assert.equal(seen.at(-1)[1].format, "eu");
+  view.unmount();
+});
+
+test("unavailable values are shown with a suffix and cannot be chosen", async () => {
+  const config = letterConfig();
+  config.units.letter.unavailable = ["ONE"];
+  config.units.letter.values.letter[1].unavailable = true;
+  const seen = [];
+  const view = await render(
+    React.createElement(SizeValueControl, {
+      config,
+      value: "",
+      selection: "select",
+      onChange(token) {
+        seen.push(token);
+      },
+    })
+  );
+  const menu = view.host.querySelector("select.size-value__menu");
+  assert.equal(menu.value, "");
+  assert.equal(menu.options[0].text, "---");
+  const options = [...menu.options].map((option) => ({
+    value: option.value,
+    text: option.text,
+    disabled: option.disabled,
+  }));
+  assert.deepEqual(
+    options.find((option) => option.value === "One size"),
+    { value: "One size", text: "One size (n/a)", disabled: true }
+  );
+  assert.equal(options.find((option) => option.value === "Small").disabled, false);
+  await act(async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      window.HTMLSelectElement.prototype,
+      "value"
+    );
+    descriptor.set.call(menu, "One size");
+    menu.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await Promise.resolve();
+  });
+  assert.deepEqual(seen, []);
+  await act(async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      window.HTMLSelectElement.prototype,
+      "value"
+    );
+    descriptor.set.call(menu, "Small");
+    menu.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await Promise.resolve();
+  });
+  assert.deepEqual(seen, ["S"]);
+  view.unmount();
+
+  const current = await render(
+    React.createElement(SizeValueControl, {
+      config,
+      value: "ONE",
+      selection: "select",
+    })
+  );
+  const currentMenu = current.host.querySelector("select.size-value__menu");
+  assert.equal(currentMenu.value, "One size");
+  assert.equal(
+    [...currentMenu.options].find((option) => option.value === "One size").disabled,
+    true
+  );
+  current.unmount();
+});
+
+test("autocomplete shows an unavailable size and does not store it", async () => {
+  const config = letterConfig();
+  config.units.letter.values.letter[1].unavailable = true;
+  const seen = [];
+  const view = await render(
+    React.createElement(SizeValueControl, {
+      config,
+      value: "",
+      unavailable: ["ONE"],
+      onChange(token) {
+        seen.push(token);
+      },
+    })
+  );
+  const input = view.input();
+  await act(async () => {
+    input.focus();
+    const descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value");
+    descriptor.set.call(input, "O");
+    input.dispatchEvent(new window.InputEvent("input", { bubbles: true }));
+    await Promise.resolve();
+  });
+  assert.equal(document.body.textContent.includes("One size (n/a)"), true);
+  const blocked = view.host.querySelector("button.size-value__option:disabled");
+  assert.equal(blocked, null);
+  const option = [...document.querySelectorAll("button.size-value__option")].find((node) =>
+    node.textContent.includes("One size (n/a)")
+  );
+  assert.equal(option.disabled, true);
+  await act(async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value");
+    descriptor.set.call(input, "One size");
+    input.dispatchEvent(new window.InputEvent("input", { bubbles: true }));
+    input.dispatchEvent(new window.FocusEvent("focusout", { bubbles: true }));
+    await Promise.resolve();
+  });
+  assert.deepEqual(seen, []);
+  assert.equal(view.host.textContent.includes("That size is not available."), true);
+  view.unmount();
+});

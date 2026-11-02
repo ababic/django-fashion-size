@@ -20,6 +20,8 @@ function defaultFormat(measurement, context) {
 const CUSTOM_FORMAT = "custom";
 const CUSTOM_ERROR = "Choose a custom size.";
 
+const EMPTY_LIST = [];
+
 function filterValues(values, query) {
   const needle = query.trim().toLowerCase();
   if (!needle) {
@@ -30,6 +32,53 @@ function filterValues(values, query) {
     const stored = item.stored.toLowerCase();
     return input.startsWith(needle) || stored.startsWith(needle);
   });
+}
+
+function isUnavailable(item, blocked) {
+  if (item?.unavailable) {
+    return true;
+  }
+  if (!blocked?.length || !item) {
+    return false;
+  }
+  const stored = String(item.stored ?? "");
+  const input = String(item.input ?? "");
+  return blocked.some((token) => {
+    const text = String(token ?? "").trim();
+    if (!text) {
+      return false;
+    }
+    const folded = text.toLowerCase();
+    return (
+      text === stored ||
+      text === input ||
+      folded === stored.toLowerCase() ||
+      folded === input.toLowerCase()
+    );
+  });
+}
+
+function optionLabel(item, blocked, suffix) {
+  return isUnavailable(item, blocked) ? `${item.input}${suffix}` : item.input;
+}
+
+function firstSelectable(matches, blocked) {
+  const index = matches.findIndex((item) => !isUnavailable(item, blocked));
+  return index === -1 ? 0 : index;
+}
+
+function stepSelectable(matches, index, delta, blocked) {
+  if (!matches.length) {
+    return 0;
+  }
+  let next = index;
+  for (let count = 0; count < matches.length; count += 1) {
+    next = (next + delta + matches.length) % matches.length;
+    if (!isUnavailable(matches[next], blocked)) {
+      return next;
+    }
+  }
+  return index;
 }
 
 function csrfToken() {
@@ -229,6 +278,10 @@ export function SizeValueField({
   customValues,
   customLabel,
   showChartLink = true,
+  selection = "autocomplete",
+  unavailable = EMPTY_LIST,
+  unavailableSuffix = " (n/a)",
+  unavailableMessage = "That size is not available.",
   onChange,
   onEntry,
 }) {
@@ -272,6 +325,9 @@ export function SizeValueField({
       { value: CUSTOM_FORMAT, label: customLabel || "Custom" },
     ];
   }, [measurement, customValues, customLabel]);
+
+  const useMenu =
+    selection === "select" && measurement.closed !== false && !measurement.length;
 
   useEffect(() => {
     if (format === CUSTOM_FORMAT && !measurement.custom) {
@@ -378,8 +434,8 @@ export function SizeValueField({
   );
 
   useEffect(() => {
-    setActiveIndex(0);
-  }, [text, format, open]);
+    setActiveIndex(firstSelectable(matches, unavailable));
+  }, [text, format, open, matches, unavailable]);
 
   useEffect(() => {
     if (!open) {
@@ -491,6 +547,10 @@ export function SizeValueField({
   };
 
   const commit = (item, { focus = false } = {}) => {
+    if (isUnavailable(item, unavailable)) {
+      setResolveError(unavailableMessage);
+      return;
+    }
     setText(item.input);
     setOpen(false);
     setResolveError("");
@@ -528,12 +588,22 @@ export function SizeValueField({
       (item) => item.input.toLowerCase() === typed.toLowerCase()
     );
     if (exact) {
+      if (isUnavailable(exact, unavailable)) {
+        if (exact.stored !== storedRef.current) {
+          setResolveError(unavailableMessage);
+        }
+        return;
+      }
       commit(exact);
       return;
     }
     if (bundles || measurement.length) {
       const value = localStored({ measurement, bundles, format, text: typed });
       if (value) {
+        if (isUnavailable({ input: typed, stored: value }, unavailable)) {
+          setResolveError(unavailableMessage);
+          return;
+        }
         setResolveError("");
         setText(typed);
         publish(value, typed);
@@ -572,14 +642,12 @@ export function SizeValueField({
       }
       event.preventDefault();
       setOpen(true);
-      setActiveIndex((index) =>
-        Math.min(index + 1, Math.max(matches.length - 1, 0))
-      );
+      setActiveIndex((index) => stepSelectable(matches, index, 1, unavailable));
       return;
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
-      setActiveIndex((index) => Math.max(index - 1, 0));
+      setActiveIndex((index) => stepSelectable(matches, index, -1, unavailable));
       return;
     }
     if (event.key === "Enter") {
@@ -710,44 +778,82 @@ export function SizeValueField({
       <div className="size-value__row">
       <div className="size-value__control" ref={controlRef}>
         {side === "left" ? formatSelect : null}
-        <input
-          ref={inputRef}
-          className="size-value__input"
-          type="text"
-          role="textbox"
-          aria-autocomplete="list"
-          aria-expanded={open}
-          aria-controls={listId}
-          aria-label={
-            regionLocked
-              ? `${ariaLabel || measurement.label}, ${formats[0]?.label || ""}`
-              : ariaLabel || measurement.label
-          }
-          placeholder={measurement.label}
-          value={text}
-          disabled={disabled}
-          autoComplete="off"
-          onChange={(event) => {
-            const next = event.target.value;
-            setText(next);
-            setOpen(Boolean(next.trim()));
-            if (!next.trim()) {
-              publish("", "");
+        {useMenu ? (
+          <select
+            className="size-value__menu"
+            value={values.some((item) => item.input === text) ? text : ""}
+            disabled={disabled}
+            aria-label={
+              regionLocked
+                ? `${ariaLabel || measurement.label}, ${formats[0]?.label || ""}`
+                : ariaLabel || measurement.label
             }
-          }}
-          onFocus={() => {
-            focused.current = true;
-            if (text.trim()) {
-              setOpen(true);
+            onChange={(event) => {
+              const next = event.target.value;
+              if (!next) {
+                setText("");
+                setResolveError("");
+                publish("", "");
+                return;
+              }
+              const item = values.find((entry) => entry.input === next);
+              if (!item || isUnavailable(item, unavailable)) {
+                return;
+              }
+              commit(item);
+            }}
+          >
+            <option value="">---</option>
+            {values.map((item) => (
+              <option
+                key={item.input}
+                value={item.input}
+                disabled={isUnavailable(item, unavailable)}
+              >
+                {optionLabel(item, unavailable, unavailableSuffix)}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            ref={inputRef}
+            className="size-value__input"
+            type="text"
+            role="textbox"
+            aria-autocomplete="list"
+            aria-expanded={open}
+            aria-controls={listId}
+            aria-label={
+              regionLocked
+                ? `${ariaLabel || measurement.label}, ${formats[0]?.label || ""}`
+                : ariaLabel || measurement.label
             }
-          }}
-          onBlur={() => {
-            focused.current = false;
-            commitTyped(text);
-            window.setTimeout(() => setOpen(false), 120);
-          }}
-          onKeyDown={onKeyDown}
-        />
+            placeholder={measurement.label}
+            value={text}
+            disabled={disabled}
+            autoComplete="off"
+            onChange={(event) => {
+              const next = event.target.value;
+              setText(next);
+              setOpen(Boolean(next.trim()));
+              if (!next.trim()) {
+                publish("", "");
+              }
+            }}
+            onFocus={() => {
+              focused.current = true;
+              if (text.trim()) {
+                setOpen(true);
+              }
+            }}
+            onBlur={() => {
+              focused.current = false;
+              commitTyped(text);
+              window.setTimeout(() => setOpen(false), 120);
+            }}
+            onKeyDown={onKeyDown}
+          />
+        )}
         {side === "right" ? formatSelect : null}
       </div>
       {showChartLink && chart ? (
@@ -772,7 +878,7 @@ export function SizeValueField({
           {resolveError}
         </p>
       ) : null}
-      {open && query && menuBox && matches.length
+      {open && query && !useMenu && menuBox && matches.length
         ? createPortal(
             <ul
               id={listId}
@@ -785,28 +891,39 @@ export function SizeValueField({
                 width: menuBox.width,
               }}
             >
-              {matches.map((item, index) => (
-                <li key={`${item.stored}-${item.input}`} role="presentation">
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={index === activeIndex}
-                    className={`size-value__option${
-                      index === activeIndex ? " is-active" : ""
-                    }`}
-                    onMouseDown={(event) => {
-                      event.preventDefault();
-                      commit(item, { focus: true });
-                    }}
-                    onMouseEnter={() => setActiveIndex(index)}
-                  >
-                    <span>{item.input}</span>
-                    {item.stored !== item.input ? (
-                      <span className="size-value__stored">{item.stored}</span>
-                    ) : null}
-                  </button>
-                </li>
-              ))}
+              {matches.map((item, index) => {
+                const blocked = isUnavailable(item, unavailable);
+                return (
+                  <li key={`${item.stored}-${item.input}`} role="presentation">
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={index === activeIndex}
+                      aria-disabled={blocked}
+                      disabled={blocked}
+                      className={`size-value__option${
+                        index === activeIndex ? " is-active" : ""
+                      }${blocked ? " is-unavailable" : ""}`}
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                        if (!blocked) {
+                          commit(item, { focus: true });
+                        }
+                      }}
+                      onMouseEnter={() => {
+                        if (!blocked) {
+                          setActiveIndex(index);
+                        }
+                      }}
+                    >
+                      <span>{optionLabel(item, unavailable, unavailableSuffix)}</span>
+                      {item.stored !== item.input ? (
+                        <span className="size-value__stored">{item.stored}</span>
+                      ) : null}
+                    </button>
+                  </li>
+                );
+              })}
             </ul>,
             document.body
           )

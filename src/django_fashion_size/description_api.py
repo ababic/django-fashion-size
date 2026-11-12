@@ -91,27 +91,46 @@ def _product_type(value: object) -> ProductType | None:
         raise ValueError("product_type must be a product type.") from exc
 
 
-def _demographic(age_group: str, gender: str) -> Demographic | None:
-    if not age_group and not gender:
+def _age_group(value: str) -> AgeGroup | None:
+    """Optional decode hint. Blank leaves fashion-size on the adult charts."""
+    if not value:
         return None
-    if not age_group or not gender:
-        raise ValueError("age_group and gender are both required to convert a size.")
     try:
-        return Demographic(AgeGroup(age_group), Gender(gender))
+        return AgeGroup(value)
     except ValueError as exc:
-        raise ValueError("age_group and gender are not a known demographic.") from exc
+        raise ValueError("age_group must be adult, child, or baby.") from exc
+
+
+def _gender(value: str) -> Gender | None:
+    """Optional conversion hint. Decode does not take a gender."""
+    if not value:
+        return None
+    try:
+        return Gender(value)
+    except ValueError as exc:
+        raise ValueError("gender must be female, male, or unisex.") from exc
+
+
+def _demographic(age_group: AgeGroup | None, gender: Gender | None) -> Demographic | None:
+    """Chart conversion needs both hints. Either one may be omitted."""
+    if age_group is None or gender is None:
+        return None
+    return Demographic(age_group, gender)
 
 
 def _request_context(payload: dict[str, Any]) -> dict[str, Any]:
     """Parse the arguments that apply to every item in the batch."""
     age_group = _text(payload.get("age_group", ""), "age_group").lower()
     gender = _text(payload.get("gender", ""), "gender").lower()
+    age_hint = _age_group(age_group)
+    gender_hint = _gender(gender)
     return {
         "source_region": _region(payload.get("source_region"), field="source_region"),
         "preferred_regions": _preferred_regions(payload.get("preferred_regions")),
         "age_group": age_group,
         "gender": gender,
-        "demographic": _demographic(age_group, gender),
+        "age_hint": age_hint,
+        "demographic": _demographic(age_hint, gender_hint),
         "brand_name": _text(payload.get("brand_name", ""), "brand_name"),
         "product_type": _product_type(payload.get("product_type")),
     }
@@ -133,12 +152,15 @@ def _item_context(item: dict[str, Any], context: dict[str, Any]) -> dict[str, An
     age_group = _item_text(item, context, "age_group").lower()
     gender = _item_text(item, context, "gender").lower()
     if age_group == context["age_group"] and gender == context["gender"]:
+        age_hint = context["age_hint"]
         demographic = context["demographic"]
     else:
-        demographic = _demographic(age_group, gender)
+        age_hint = _age_group(age_group)
+        demographic = _demographic(age_hint, _gender(gender))
     return {
         "product_type": product_type,
         "brand_name": brand_name,
+        "age_hint": age_hint,
         "demographic": demographic,
     }
 
@@ -303,6 +325,7 @@ def _decode_item(item: dict[str, Any], context: dict[str, Any]) -> dict[str, Any
         item["value"],
         context["source_region"],
         product_type=item_context["product_type"],
+        age_group=item_context["age_hint"],
     )
     return {
         "sizes": [
@@ -405,8 +428,11 @@ def decode_size_descriptions(request: HttpRequest) -> JsonResponse:
 
     ``source_region`` and ``preferred_regions`` are request-level.
     ``preferred_regions`` adds a ``regions`` list on each size, converted
-    into those regions. Chart conversion uses the request's ``age_group``
-    and ``gender`` unless the item sets its own.
+    into those regions. Optional ``age_group`` (``adult``, ``child``, or
+    ``baby``) is passed through to fashion-size, on the request or the item,
+    and selects the shoe chart. Omit it and the reading stays adult.
+    ``gender`` is optional too and is used only when converting a chart size;
+    decode does not take one. Conversion still needs both.
     """
     return _batch(request, _decode_item)
 

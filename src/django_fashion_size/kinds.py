@@ -41,6 +41,7 @@ class SizeTypeSlug(models.TextChoices):
     AGE_MONTHS = FashionSizeTypeSlug.AGE_MONTHS, _("Age (months)")
     AGE_YEARS = FashionSizeTypeSlug.AGE_YEARS, _("Age (years)")
     LETTER = FashionSizeTypeSlug.LETTER, _("Letter size")
+    CUP_RANGE = FashionSizeTypeSlug.CUP_RANGE, _("Cup range")
 
 
 class SizeUnitSlug(models.TextChoices):
@@ -105,6 +106,7 @@ class SizeUnitSlug(models.TextChoices):
     AGE_MONTHS = "age-months", _("Age (months)")
     AGE_YEARS = "age-years", _("Age (years)")
     LETTER = "letter", _("Letter size")
+    CUP_RANGE = "cup-range", _("Cup range")
 
 
 class FashionProductType(models.TextChoices):

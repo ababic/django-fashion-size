@@ -95,6 +95,56 @@ def test_source_region_is_read_once_for_the_batch() -> None:
     assert "regions" not in results[0]["sizes"][0]
 
 
+def test_age_group_selects_the_shoe_chart() -> None:
+    response = _post(
+        decode_size_descriptions,
+        {
+            "source_region": "uk",
+            "age_group": "child",
+            "items": [
+                {"value": "28", "product_type": "shoes"},
+                {"value": "EU 28", "product_type": "shoes", "age_group": "baby"},
+                {"value": "28", "product_type": "shoes", "age_group": "adult"},
+            ],
+        },
+    )
+    assert response.status_code == 200, response.content
+    child, baby, adult = _body(response)["results"]
+    assert child["sizes"][0]["size_unit"] == "eu-kids-shoe-size"
+    assert child["sizes"][0]["raw"] == "28"
+    assert baby["sizes"][0]["size_unit"] == "eu-baby-shoe-size"
+    assert baby["sizes"][0]["raw"] == "28"
+    assert adult["sizes"] == []
+    assert adult["discarded"][0]["reason"] == "unrecognised"
+
+
+def test_age_group_alone_does_not_require_a_gender() -> None:
+    response = _post(
+        decode_size_descriptions,
+        {
+            "source_region": "uk",
+            "age_group": "child",
+            "items": [{"value": "28", "product_type": "shoes"}],
+        },
+    )
+    assert response.status_code == 200, response.content
+    size = _body(response)["results"][0]["sizes"][0]
+    assert size["size_unit"] == "eu-kids-shoe-size"
+
+
+def test_unknown_age_group_rejects_the_batch() -> None:
+    response = _post(
+        decode_size_descriptions,
+        {
+            "source_region": "uk",
+            "age_group": "toddler",
+            "items": [{"value": "8", "product_type": "shoes"}],
+        },
+    )
+    assert response.status_code == 400
+    assert "age_group" in _body(response)["error"]
+
+
 def test_preferred_regions_convert_chart_and_length_sizes() -> None:
     response = _post(
         decode_size_descriptions,

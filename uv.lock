@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.12"
 
 [[package]]
@@ -54,7 +54,7 @@ wheels = [
 
 [[package]]
 name = "django-fashion-size"
-version = "0.13.1"
+version = "0.13.2"
 source = { editable = "." }
 dependencies = [
     { name = "django" },
@@ -73,7 +73,7 @@ testing = [
 [package.metadata]
 requires-dist = [
     { name = "django", specifier = ">=6.0,<7" },
-    { name = "fashion-size", specifier = ">=2026.11.12" },
+    { name = "fashion-size", specifier = ">=2026.11.13.1" },
     { name = "pytest", marker = "extra == 'testing'", specifier = ">=8" },
     { name = "ruff", marker = "extra == 'development'", specifier = ">=0.11,<1" },
     { name = "tox", marker = "extra == 'testing'", specifier = ">=4" },
@@ -82,11 +82,11 @@ provides-extras = ["testing", "development"]
 
 [[package]]
 name = "fashion-size"
-version = "2026.11.12"
+version = "2026.11.13.1"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/a3/c8/7e44d46cba3a683ba1aaaf04d2704ca5e8bad53e794b2603294d409d07b6/fashion_size-2026.11.12.tar.gz", hash = "sha256:f0de50b9bdf8a1d2c62f83d455d26560c6d8c6fbd29b923cd9655b39611a96ff", size = 89346, upload-time = "2026-11-12T12:22:03.45Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d8/91/3e32abf54cbb21080d20c60f452c9a4ef4736ff20f4faafb789713085405/fashion_size-2026.11.13.1.tar.gz", hash = "sha256:3ef080d5cb1e4466fd39e00f75f21cfff3006447ff512fc84d3b5cc24727282c", size = 100726, upload-time = "2026-11-13T19:52:40.711Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3f/34/8dfceb043be3ff4bf18217afd99dd7b90884a0ddcb569eb5c8d7ad3c3521/fashion_size-2026.11.12-py3-none-any.whl", hash = "sha256:7d18a8581510b71fbd33c1aaadab4e4257eceaf56088d094690a659da3bf01a0", size = 77348, upload-time = "2026-11-12T12:22:02.24Z" },
+    { url = "https://files.pythonhosted.org/packages/68/ed/0961f031cd9623a31e24a6de12b2090b82ba6ffc3b200fb07f4cfce6e6b8/fashion_size-2026.11.13.1-py3-none-any.whl", hash = "sha256:fa3a30c043727499365b797b8649e5762f67bc18c67b5b8444d7f4f24ecc62dd", size = 81539, upload-time = "2026-11-13T19:52:39.314Z" },
 ]
 
 [[package]]

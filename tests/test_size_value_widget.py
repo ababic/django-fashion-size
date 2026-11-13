@@ -789,8 +789,8 @@ def test_shorts_inseam_uses_its_own_inch_bounds() -> None:
     ]["measurement"]
     assert measurement["length"] is True
     assert measurement["length_min"] == "2"
-    assert measurement["length_max"] == "22"
-    assert measurement["length_error"] == "Enter a length from 2 to 22 inches."
+    assert measurement["length_max"] == "24"
+    assert measurement["length_error"] == "Enter a length from 2 to 24 inches."
     assert [item["value"] for item in measurement["formats"]] == ["in", "cm"]
     posted = ItemForm(
         data={
@@ -807,13 +807,13 @@ def test_shorts_inseam_uses_its_own_inch_bounds() -> None:
         data={
             "size_unit": "in-shorts-inseam",
             "size__active": "1",
-            "size__entry": "23",
+            "size__entry": "25",
             "size__format": "in",
             "size__unit": "in-shorts-inseam",
         }
     )
     assert not rejected.is_valid()
-    assert "2 to 22" in rejected.errors["size"][0]
+    assert "2 to 24" in rejected.errors["size"][0]
 
 
 def test_sleeve_and_inside_leg_use_their_own_bounds() -> None:

@@ -222,6 +222,79 @@ def test_encode_converts_to_the_first_preferred_region() -> None:
     assert shorts["used"][0]["raw"] == "25.4"
 
 
+def test_encode_keeps_garment_length_and_can_drop_region_prefix() -> None:
+    response = _post(
+        encode_size_descriptions,
+        {
+            "source_region": "uk",
+            "items": [
+                {
+                    "product_type": "skirts",
+                    "sizes": [
+                        {"raw": "10", "size_unit": "uk-dress-size"},
+                        {"raw": "mid", "size_unit": "skirt-length"},
+                    ],
+                },
+                {
+                    "product_type": "skirts",
+                    "include_region_prefix": False,
+                    "sizes": [
+                        {"raw": "10", "size_unit": "uk-dress-size"},
+                        {"raw": "mid", "size_unit": "skirt-length"},
+                    ],
+                },
+                {
+                    "product_type": "dresses",
+                    "sizes": [
+                        {"raw": "10", "size_unit": "uk-dress-size"},
+                        {"raw": "34", "size_unit": "in-hem-length"},
+                    ],
+                },
+                {
+                    "product_type": "outerwear",
+                    "sizes": [
+                        {"raw": "40", "size_unit": "in-chest-size"},
+                        {"raw": "long", "size_unit": "jacket-length"},
+                    ],
+                },
+            ],
+        },
+    )
+    assert response.status_code == 200, response.content
+    skirt, bare, hem, jacket = _body(response)["results"]
+    assert skirt["text"] == "UK 10M"
+    assert {size["size_unit"] for size in skirt["used"]} == {
+        "uk-dress-size",
+        "skirt-length",
+    }
+    assert bare["text"] == "10M"
+    assert hem["text"] == "UK 10 34"
+    assert {size["size_unit"] for size in hem["used"]} == {
+        "uk-dress-size",
+        "in-hem-length",
+    }
+    assert jacket["text"] == "40L"
+    assert {size["size_unit"] for size in jacket["used"]} == {
+        "in-chest-size",
+        "jacket-length",
+    }
+
+
+def test_include_region_prefix_must_be_a_boolean() -> None:
+    response = _post(
+        encode_size_descriptions,
+        {
+            "source_region": "uk",
+            "include_region_prefix": "no",
+            "items": [
+                {"sizes": [{"raw": "10", "size_unit": "uk-dress-size"}]},
+            ],
+        },
+    )
+    assert response.status_code == 400
+    assert "include_region_prefix" in _body(response)["error"]
+
+
 def test_one_bad_item_does_not_reject_the_batch() -> None:
     response = _post(
         decode_size_descriptions,

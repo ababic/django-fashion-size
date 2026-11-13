@@ -92,7 +92,7 @@ def _product_type(value: object) -> ProductType | None:
 
 
 def _age_group(value: str) -> AgeGroup | None:
-    """Optional decode hint. Blank leaves fashion-size on the adult charts."""
+    """Optional decode/encode hint. Blank leaves fashion-size on the adult charts."""
     if not value:
         return None
     try:
@@ -109,6 +109,15 @@ def _gender(value: str) -> Gender | None:
         return Gender(value)
     except ValueError as exc:
         raise ValueError("gender must be female, male, or unisex.") from exc
+
+
+def _include_region_prefix(value: object) -> bool:
+    """Whether encode should keep chart region prefixes in the listing text."""
+    if value in (None, ""):
+        return True
+    if isinstance(value, bool):
+        return value
+    raise TypeError("include_region_prefix must be a boolean.")
 
 
 def _demographic(age_group: AgeGroup | None, gender: Gender | None) -> Demographic | None:
@@ -133,6 +142,9 @@ def _request_context(payload: dict[str, Any]) -> dict[str, Any]:
         "demographic": _demographic(age_hint, gender_hint),
         "brand_name": _text(payload.get("brand_name", ""), "brand_name"),
         "product_type": _product_type(payload.get("product_type")),
+        "include_region_prefix": _include_region_prefix(
+            payload.get("include_region_prefix")
+        ),
     }
 
 
@@ -157,11 +169,16 @@ def _item_context(item: dict[str, Any], context: dict[str, Any]) -> dict[str, An
     else:
         age_hint = _age_group(age_group)
         demographic = _demographic(age_hint, _gender(gender))
+    if "include_region_prefix" in item:
+        include_region_prefix = _include_region_prefix(item.get("include_region_prefix"))
+    else:
+        include_region_prefix = context["include_region_prefix"]
     return {
         "product_type": product_type,
         "brand_name": brand_name,
         "age_hint": age_hint,
         "demographic": demographic,
+        "include_region_prefix": include_region_prefix,
     }
 
 
@@ -367,6 +384,8 @@ def _encode_item(item: dict[str, Any], context: dict[str, Any]) -> dict[str, Any
         preferred_regions=context["preferred_regions"] or None,
         product_type=item_context["product_type"],
         format=description_format,
+        age_group=item_context["age_hint"],
+        include_region_prefix=item_context["include_region_prefix"],
     )
     return {
         "text": encoded.text,
@@ -444,6 +463,9 @@ def encode_size_descriptions(request: HttpRequest) -> JsonResponse:
 
     Chart sizes are converted to the first ``preferred_regions`` entry before
     encoding, when a demographic is available. The same list is returned on
-    each used size.
+    each used size. Optional ``age_group`` is passed through to fashion-size
+    so length and shoe listing forms follow the right chart. Optional
+    ``include_region_prefix`` (default ``true``) drops chart region prefixes
+    from the listing when ``false``.
     """
     return _batch(request, _encode_item)
